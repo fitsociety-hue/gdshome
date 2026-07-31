@@ -4,7 +4,7 @@
  */
 
 // 1. App Configuration & Constants
-const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxI-bCJ5RPaniBenLll1YRHLeySk2YQ_Cg3H_jJILcYP9Je7JoL2rpq7qSXthikAQcw/exec';
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxvdx6QkFRdeIWvnHIza0yub2JbkVmIlBg6Kxi_P33yljmHz-Ra54fcicYOBlF5M_9C/exec';
 
 const CATEGORIES = [
   '공지사항',
