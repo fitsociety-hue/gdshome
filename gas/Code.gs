@@ -5,20 +5,20 @@
  * - 역할: 
  *   1. 복지관 7개 게시판 정기 스크래핑 (GNUBoard Table & Gallery 스킨 완벽 대응)
  *   2. post_id 기반 중복 제거 및 Google Sheets 적재
- *   3. KST 기준 일별/카테고리별 실적 자동 카운팅
+ *   3. KST 기준 일별/카테고리별 실적 인덱스 기반 인코딩 안전 카운팅
  *   4. 프론트엔드(GitHub Pages) 연결용 Web App JSON API (doGet)
  * ==========================================================================
  */
 
-// 1. 대상 게시판 스펙 정의
+// 1. 대상 게시판 스펙 정의 (인덱스 기반 매핑)
 const TARGET_CONFIGS = [
-  { category: '공지사항', mainCategory: '어울림 소식', subCategory: '공지사항', url: 'https://gde.or.kr/notice', boTable: 'notice' },
-  { category: '공시자료', mainCategory: '어울림 소식', subCategory: '공지사항', url: 'https://gde.or.kr/infoopen', boTable: 'infoopen' },
-  { category: '인재채용', mainCategory: '어울림 소식', subCategory: '공지사항', url: 'https://gde.or.kr/recruitment', boTable: 'recruitment' },
-  { category: '이용인모집', mainCategory: '어울림 소식', subCategory: '이용인 모집', url: 'https://gde.or.kr/program', boTable: 'program' },
-  { category: '정보안내', mainCategory: '어울림 소식', subCategory: '정보안내', url: 'https://gde.or.kr/information', boTable: 'information' },
-  { category: '갤러리(전체)', mainCategory: '어울림 갤러리', subCategory: '전체', url: 'https://gde.or.kr/gallery', boTable: 'gallery' },
-  { category: '이용상담문의', mainCategory: '참여하기', subCategory: '이용상담문의', url: 'https://gde.or.kr/counseling', boTable: 'counseling' }
+  { index: 0, category: '공지사항', mainCategory: '어울림 소식', subCategory: '공지사항', url: 'https://gde.or.kr/notice', boTable: 'notice' },
+  { index: 1, category: '공시자료', mainCategory: '어울림 소식', subCategory: '공지사항', url: 'https://gde.or.kr/infoopen', boTable: 'infoopen' },
+  { index: 2, category: '인재채용', mainCategory: '어울림 소식', subCategory: '공지사항', url: 'https://gde.or.kr/recruitment', boTable: 'recruitment' },
+  { index: 3, category: '이용인모집', mainCategory: '어울림 소식', subCategory: '이용인 모집', url: 'https://gde.or.kr/program', boTable: 'program' },
+  { index: 4, category: '정보안내', mainCategory: '어울림 소식', subCategory: '정보안내', url: 'https://gde.or.kr/information', boTable: 'information' },
+  { index: 5, category: '갤러리(전체)', mainCategory: '어울림 갤러리', subCategory: '전체', url: 'https://gde.or.kr/gallery', boTable: 'gallery' },
+  { index: 6, category: '이용상담문의', mainCategory: '참여하기', subCategory: '이용상담문의', url: 'https://gde.or.kr/counseling', boTable: 'counseling' }
 ];
 
 const CATEGORIES = [
@@ -125,8 +125,8 @@ function runScraper() {
             kstNow
           ]);
 
-          // 일별 집계 반영
-          updateDailyAggregation(dailySheet, post.date, conf.category);
+          // 인덱스 기반 일별 집계 반영 (인코딩 안전 방식)
+          updateDailyAggregation(dailySheet, post.date, conf.index);
         }
       });
     } catch (e) {
@@ -236,17 +236,24 @@ function parseGnuboardHtml(html, conf) {
 }
 
 /**
- * 5. 일별 집계 시트 업데이트 함수
+ * 5. 일별 집계 시트 업데이트 함수 (인덱스 기반)
  */
-function updateDailyAggregation(dailySheet, dateStr, category) {
+function updateDailyAggregation(dailySheet, dateStr, confIndex) {
+  if (confIndex < 0 || confIndex > 6) return;
+  const colIndex = confIndex + 2; // Col B (2) to Col H (8)
+
   const lastRow = dailySheet.getLastRow();
   let targetRowIndex = -1;
 
   if (lastRow > 1) {
     const dates = dailySheet.getRange(2, 1, lastRow - 1, 1).getValues();
     for (let i = 0; i < dates.length; i++) {
-      const dStr = dates[i][0] instanceof Date ? 
-        Utilities.formatDate(dates[i][0], "Asia/Seoul", "yyyy-MM-dd") : String(dates[i][0]).trim();
+      let dStr = "";
+      if (dates[i][0] instanceof Date) {
+        dStr = Utilities.formatDate(dates[i][0], "Asia/Seoul", "yyyy-MM-dd");
+      } else {
+        dStr = String(dates[i][0]).trim().substring(0, 10);
+      }
       if (dStr === dateStr) {
         targetRowIndex = i + 2;
         break;
@@ -254,37 +261,34 @@ function updateDailyAggregation(dailySheet, dateStr, category) {
     }
   }
 
-  const catIndex = CATEGORIES.indexOf(category);
-  if (catIndex === -1) return;
-  const colIndex = catIndex + 2; // Category columns start from B (2)
-
   if (targetRowIndex !== -1) {
-    // Existing Date row found -> increment count
     const currentVal = Number(dailySheet.getRange(targetRowIndex, colIndex).getValue()) || 0;
     dailySheet.getRange(targetRowIndex, colIndex).setValue(currentVal + 1);
     
-    // Recalculate total sum in column I (9)
+    // Recalculate total sum in col I (9)
     const rowVals = dailySheet.getRange(targetRowIndex, 2, 1, 7).getValues()[0];
     const rowTotal = rowVals.reduce((acc, v) => acc + (Number(v) || 0), 0);
     dailySheet.getRange(targetRowIndex, 9).setValue(rowTotal);
   } else {
-    // New Date row -> append
     const newRow = [dateStr, 0, 0, 0, 0, 0, 0, 0, 0];
     newRow[colIndex - 1] = 1;
-    newRow[8] = 1; // Total = 1
+    newRow[8] = 1; // Total
     dailySheet.appendRow(newRow);
   }
 }
 
 /**
  * 6. Web App JSON API Endpoint (doGet)
- * 프론트엔드(GitHub Pages)에서 fetch() 호출 시 데이터 응답
- * (type=scrape 파라미터 전달 시 스크래핑 강제 즉시 실행 지원)
+ * ?type=reset : 시트 초기화 후 스크래핑 재실행
+ * ?type=scrape : 즉시 스크래퍼 실행
  */
 function doGet(e) {
-  // ?type=scrape 인 경우 즉시 스크래퍼 실행
-  if (e && e.parameter && e.parameter.type === 'scrape') {
-    runScraper();
+  if (e && e.parameter) {
+    if (e.parameter.type === 'reset') {
+      resetAndScrape();
+    } else if (e.parameter.type === 'scrape') {
+      runScraper();
+    }
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -296,7 +300,7 @@ function doGet(e) {
     const rows = dailySheet.getRange(2, 1, dailySheet.getLastRow() - 1, 9).getValues();
     rows.forEach(r => {
       const dateStr = r[0] instanceof Date ? 
-        Utilities.formatDate(r[0], "Asia/Seoul", "yyyy-MM-dd") : String(r[0]);
+        Utilities.formatDate(r[0], "Asia/Seoul", "yyyy-MM-dd") : String(r[0]).trim().substring(0, 10);
       
       const cats = {};
       CATEGORIES.forEach((c, idx) => {
@@ -313,15 +317,20 @@ function doGet(e) {
 
   const historyData = [];
   if (historySheet && historySheet.getLastRow() > 1) {
-    const rows = historySheet.getRange(2, 1, Math.min(historySheet.getLastRow() - 1, 500), 7).getValues();
-    rows.forEach(r => {
+    const totalRows = historySheet.getLastRow() - 1;
+    const readRows = Math.min(totalRows, 500);
+    // Read most recent rows first
+    const startRow = Math.max(2, historySheet.getLastRow() - readRows + 1);
+    const rows = historySheet.getRange(startRow, 1, readRows, 7).getValues();
+    
+    rows.reverse().forEach(r => {
       historyData.push({
         post_id: String(r[0]),
         main_category: String(r[1]),
         sub_category: String(r[2]),
         category: String(r[3]),
         title: String(r[4]),
-        date: r[5] instanceof Date ? Utilities.formatDate(r[5], "Asia/Seoul", "yyyy-MM-dd") : String(r[5]),
+        date: r[5] instanceof Date ? Utilities.formatDate(r[5], "Asia/Seoul", "yyyy-MM-dd") : String(r[5]).substring(0, 10),
         collected_at: r[6] instanceof Date ? Utilities.formatDate(r[6], "Asia/Seoul", "yyyy-MM-dd HH:mm:ss") : String(r[6])
       });
     });
@@ -357,4 +366,20 @@ function createTrigger() {
     .create();
 
   Logger.log('15분 주기 자동 스크래핑 트리거 설정 완료!');
+}
+
+/**
+ * 8. 데이터 완전 초기화 후 재스크래핑 (클린업용)
+ */
+function resetAndScrape() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let historySheet = ss.getSheetByName('수집이력');
+  let dailySheet = ss.getSheetByName('일별집계');
+  
+  if (historySheet) historySheet.clear();
+  if (dailySheet) dailySheet.clear();
+  
+  initSheets();
+  runScraper();
+  Logger.log('데이터 초기화 및 최신 스크래핑 재실행 완료!');
 }
