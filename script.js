@@ -136,22 +136,23 @@ function generateMockData() {
 }
 
 // 5. Data Fetching Logic (GAS API vs Demo Mode)
-async function loadData() {
-  setSyncStatus('syncing', '데이터 수집 중...');
+async function loadData(forceScrape = false) {
+  setSyncStatus('syncing', forceScrape ? '실시간 스크래핑 및 동기화 중...' : '데이터 수집 중...');
   const refreshIcon = document.getElementById('refreshIcon');
   if (refreshIcon) refreshIcon.classList.add('fa-spin');
 
   try {
     if (state.isDemoMode) {
       // Demo mode fallback
-      await new Promise(res => setTimeout(res, 400)); // Simulate network latency
+      await new Promise(res => setTimeout(res, 400));
       const mock = generateMockData();
       state.rawDailyData = mock.daily;
       state.rawHistoryData = mock.history;
       setSyncStatus('online', '시연용 샘플 데이터');
     } else {
-      // Fetch from GAS Web App API
-      const response = await fetch(`${state.gasUrl}?type=all`, {
+      // Fetch from GAS Web App API (trigger immediate scrape if forceScrape = true)
+      const apiUrl = forceScrape ? `${state.gasUrl}?type=scrape` : `${state.gasUrl}?type=all`;
+      const response = await fetch(apiUrl, {
         method: 'GET',
         mode: 'cors'
       });
@@ -164,9 +165,12 @@ async function loadData() {
       if (json.status === 'success' && json.daily && json.history) {
         state.rawDailyData = json.daily;
         state.rawHistoryData = json.history;
+        
+        // Build hybrid daily aggregation from history if daily is missing today's row
+        rebuildDailyFromHistoryIfNeeded();
+
         setSyncStatus('online', '실시간 동기화 완료');
       } else {
-        // Fallback to sample if empty response
         console.warn('GAS 응답 데이터 미비, 샘플 모드로 표시합니다.', json);
         const mock = generateMockData();
         state.rawDailyData = mock.daily;
@@ -176,7 +180,6 @@ async function loadData() {
     }
   } catch (err) {
     console.error('데이터 로드 오류:', err);
-    // Automatic demo mode fallback on error
     const mock = generateMockData();
     state.rawDailyData = mock.daily;
     state.rawHistoryData = mock.history;
@@ -185,6 +188,44 @@ async function loadData() {
     if (refreshIcon) refreshIcon.classList.remove('fa-spin');
     renderDashboard();
   }
+}
+
+/**
+ * If history has items for a date that daily sheet lacks or has 0,
+ * recalculate daily map directly from history items for full accuracy.
+ */
+function rebuildDailyFromHistoryIfNeeded() {
+  if (!state.rawHistoryData || state.rawHistoryData.length === 0) return;
+
+  const historyByDate = {};
+  state.rawHistoryData.forEach(item => {
+    const d = item.date;
+    const cat = item.category;
+    if (!d || !cat) return;
+
+    if (!historyByDate[d]) {
+      historyByDate[d] = { date: d, categories: {}, total: 0 };
+      CATEGORIES.forEach(c => historyByDate[d].categories[c] = 0);
+    }
+    historyByDate[d].categories[cat] = (historyByDate[d].categories[cat] || 0) + 1;
+    historyByDate[d].total += 1;
+  });
+
+  // Merge historyByDate into rawDailyData
+  Object.keys(historyByDate).forEach(d => {
+    const existingIndex = state.rawDailyData.findIndex(item => item.date === d);
+    if (existingIndex !== -1) {
+      // Replace if history has more comprehensive data
+      if (historyByDate[d].total > (state.rawDailyData[existingIndex].total || 0)) {
+        state.rawDailyData[existingIndex] = historyByDate[d];
+      }
+    } else {
+      state.rawDailyData.push(historyByDate[d]);
+    }
+  });
+
+  // Sort daily data ascending by date
+  state.rawDailyData.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function setSyncStatus(type, message) {
@@ -303,7 +344,6 @@ function renderTrendChart(dailyData) {
     state.trendChartInstance.destroy();
   }
 
-  // Gradient fill for line chart
   const gradient = ctx.createLinearGradient(0, 0, 0, 260);
   gradient.addColorStop(0, 'rgba(59, 130, 246, 0.35)');
   gradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
@@ -420,7 +460,6 @@ function renderHistoryTable() {
   const countEl = document.getElementById('tableRecordCount');
   if (!tbody) return;
 
-  // Filter history items by search query and category
   let filtered = state.rawHistoryData.filter(item => {
     const matchesSearch = state.searchQuery === '' ||
       item.title.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
@@ -432,7 +471,7 @@ function renderHistoryTable() {
     return matchesSearch && matchesCategory;
   });
 
-  if (countEl) countEl.textContent = `총 ${filtered.length}건 검색됨`;
+  if (countEl) countEl.textContent = `총 ${filtered.length}건 수집됨`;
 
   if (filtered.length === 0) {
     tbody.innerHTML = `
@@ -446,7 +485,6 @@ function renderHistoryTable() {
     return;
   }
 
-  // Pagination slice
   const totalPages = Math.ceil(filtered.length / state.pageSize);
   if (state.currentPage > totalPages) state.currentPage = 1;
   const startIdx = (state.currentPage - 1) * state.pageSize;
@@ -499,7 +537,6 @@ function renderPagination(totalPages) {
 
 // 10. Event Listeners Setup
 function setupEventListeners() {
-  // Period filter buttons
   document.querySelectorAll('.filter-pill').forEach(btn => {
     btn.addEventListener('click', (e) => {
       document.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
@@ -509,7 +546,6 @@ function setupEventListeners() {
     });
   });
 
-  // Custom date picker apply
   const applyDateBtn = document.getElementById('applyDateBtn');
   if (applyDateBtn) {
     applyDateBtn.addEventListener('click', () => {
@@ -527,15 +563,13 @@ function setupEventListeners() {
     });
   }
 
-  // Refresh Button
   const refreshBtn = document.getElementById('refreshBtn');
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => {
-      loadData();
+      loadData(true); // Force immediate scrape on GAS
     });
   }
 
-  // Chart Toggle (Line vs Bar)
   const chartTypeLine = document.getElementById('chartTypeLine');
   const chartTypeBar = document.getElementById('chartTypeBar');
   if (chartTypeLine && chartTypeBar) {
@@ -553,7 +587,6 @@ function setupEventListeners() {
     });
   }
 
-  // Table Search Input
   const searchInput = document.getElementById('searchInput');
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
@@ -563,7 +596,6 @@ function setupEventListeners() {
     });
   }
 
-  // Table Category Dropdown Filter
   const categoryFilter = document.getElementById('categoryFilter');
   if (categoryFilter) {
     categoryFilter.addEventListener('change', (e) => {
@@ -573,7 +605,6 @@ function setupEventListeners() {
     });
   }
 
-  // API Config Modal Elements
   const apiModal = document.getElementById('apiModal');
   const apiConfigBtn = document.getElementById('apiConfigBtn');
   const modalCloseBtn = document.getElementById('modalCloseBtn');
@@ -627,24 +658,19 @@ function setupEventListeners() {
 
 // 11. App Initialization
 document.addEventListener('DOMContentLoaded', () => {
-  // Set default date inputs to today
   const todayStr = getTodayKST();
   const startDateInput = document.getElementById('startDateInput');
   const endDateInput = document.getElementById('endDateInput');
   if (startDateInput) startDateInput.value = todayStr;
   if (endDateInput) endDateInput.value = todayStr;
 
-  // Start live clock
   updateKSTClock();
   setInterval(updateKSTClock, 1000);
 
-  // Setup Event Handlers
   setupEventListeners();
 
-  // Load Initial Data
   loadData();
 
-  // 5 Minutes Periodic Auto Refresh
   setInterval(() => {
     loadData();
   }, 5 * 60 * 1000);

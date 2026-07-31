@@ -3,7 +3,7 @@
  * 강동어울림복지관 홍보 통합실적 관리 앱 - Google Apps Script (GAS) 백엔드 Code.gs
  * ==========================================================================
  * - 역할: 
- *   1. 복지관 7개 게시판 정기 스크래핑 (GNUBoard HTML 파싱)
+ *   1. 복지관 7개 게시판 정기 스크래핑 (GNUBoard Table & Gallery 스킨 완벽 대응)
  *   2. post_id 기반 중복 제거 및 Google Sheets 적재
  *   3. KST 기준 일별/카테고리별 실적 자동 카운팅
  *   4. 프론트엔드(GitHub Pages) 연결용 Web App JSON API (doGet)
@@ -138,38 +138,99 @@ function runScraper() {
 }
 
 /**
- * 4. GNUBoard HTML 파싱 함수
+ * 4. GNUBoard HTML 파싱 함수 (Table 리스트 & Gallery 카드 스킨 완벽 대응)
  */
 function parseGnuboardHtml(html, conf) {
   const posts = [];
   
-  // Regex pattern matching wr_id, title, date
-  // e.g. <a href="...bo_table=notice&wr_id=2355...">Title</a> ... 2026-07-31
-  const linkRegex = new RegExp(`href=["'][^"']*bo_table=${conf.boTable}[^"']*wr_id=(\\d+)[^"']*["'][^>]*>([\\s\\S]*?)<\\/a>`, 'gi');
-  const dateRegex = /\b(20\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/g;
+  // 주석 제거 (주석 내부 작성일/링크 오탐 방지)
+  const cleanHtml = html.replace(/<!--[\s\S]*?-->/g, '');
+  const seenIds = {};
 
-  // Simple string-based extraction fallback for robust parsing
-  const matches = [...html.matchAll(linkRegex)];
-  
-  matches.forEach(match => {
-    const wrId = match[1];
-    let rawTitle = match[2].replace(/<[^>]+>/g, '').trim(); // Remove HTML tags
+  // ① Strategy 1: <tr>...</tr> 테이블 행 파싱 (공지사항, 공시자료, 인재채용, 이용상담문의)
+  const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let trMatch;
+  while ((trMatch = trRegex.exec(cleanHtml)) !== null) {
+    const tr = trMatch[1];
+    const wrIdMatch = tr.match(/wr_id=(\d+)/i);
+    if (!wrIdMatch) continue;
     
-    // Ignore internal navigation text
-    if (!rawTitle || rawTitle.includes('답변') || rawTitle.length < 2) return;
+    const wrId = wrIdMatch[1];
+    if (seenIds[wrId]) continue;
 
-    // Find nearest date snippet after this post link
-    const searchArea = html.substring(match.index, match.index + 500);
-    const dateMatch = searchArea.match(dateRegex);
-    
-    let postDate = dateMatch ? dateMatch[0].replace(/[\/.]/g, '-') : Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+    let title = "";
+    const boTitMatch = tr.match(/class=["'][^"']*bo_tit[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
+    if (boTitMatch) {
+      title = boTitMatch[1].replace(/<[^>]+>/g, '').trim();
+    }
+    if (!title) {
+      const titleAttrMatch = tr.match(/title=["']([^"']+)["']/i);
+      if (titleAttrMatch) title = titleAttrMatch[1].trim();
+    }
+    if (!title) {
+      const linkMatch = tr.match(new RegExp(`href=["'][^"']*wr_id=${wrId}[^"']*["'][^>]*>([\\s\\S]*?)<\\/a>`, 'i'));
+      if (linkMatch) title = linkMatch[1].replace(/<[^>]+>/g, '').trim();
+    }
 
-    posts.push({
-      wrId: wrId,
-      title: rawTitle,
-      date: postDate
-    });
-  });
+    title = title.replace(/\s*N\s*새글\s*$/i, '').replace(/\s*새글\s*$/i, '').trim();
+    if (!title || title.length < 2 || title.indexOf('답변') !== -1 || title.indexOf('제목') !== -1) continue;
+
+    let dateStr = "";
+    const tdDateMatch = tr.match(/class=["'][^"']*td_datetime[^"']*["'][^>]*>([\s\S]*?)<\/td>/i);
+    if (tdDateMatch) {
+      const textDate = tdDateMatch[1].replace(/<[^>]+>/g, '').trim();
+      const dm = textDate.match(/\b(20\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/);
+      if (dm) dateStr = dm[1].replace(/[\/.]/g, '-');
+    }
+    if (!dateStr) {
+      const textOnly = tr.replace(/<[^>]+>/g, ' ');
+      const dm = textOnly.match(/\b(20\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/);
+      if (dm) dateStr = dm[1].replace(/[\/.]/g, '-');
+    }
+
+    if (dateStr) {
+      seenIds[wrId] = true;
+      posts.push({ wrId: wrId, title: title, date: dateStr });
+    }
+  }
+
+  // ② Strategy 2: <li class="gall_li">...</li> 카드 파싱 (갤러리, 이용인모집, 정보안내 카드 스킨)
+  const liRegex = /<li[^>]*class=["'][^"']*gall_li[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi;
+  let liMatch;
+  while ((liMatch = liRegex.exec(cleanHtml)) !== null) {
+    const li = liMatch[1];
+    const wrIdMatch = li.match(/wr_id=(\d+)/i);
+    if (!wrIdMatch) continue;
+
+    const wrId = wrIdMatch[1];
+    if (seenIds[wrId]) continue;
+
+    let title = "";
+    const boTitMatch = li.match(/class=["'][^"']*bo_tit[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
+    if (boTitMatch) {
+      title = boTitMatch[1].replace(/<[^>]+>/g, '').trim();
+    }
+    if (!title) {
+      const titleAttrMatch = li.match(/title=["']([^"']+)["']/i);
+      if (titleAttrMatch) title = titleAttrMatch[1].trim();
+    }
+    if (!title) {
+      const linkMatch = li.match(new RegExp(`href=["'][^"']*wr_id=${wrId}[^"']*["'][^>]*>([\\s\\S]*?)<\\/a>`, 'i'));
+      if (linkMatch) title = linkMatch[1].replace(/<[^>]+>/g, '').trim();
+    }
+
+    title = title.replace(/\s*N\s*새글\s*$/i, '').replace(/\s*새글\s*$/i, '').trim();
+    if (!title || title.length < 2 || title.indexOf('답변') !== -1) continue;
+
+    const textOnly = li.replace(/<[^>]+>/g, ' ');
+    const dm = textOnly.match(/\b(20\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/);
+    const dateStr = dm ? dm[1].replace(/[\/.]/g, '-') : "";
+
+    if (dateStr) {
+      seenIds[wrId] = true;
+      posts.push({ wrId: wrId, title: title, date: dateStr });
+    }
+  }
 
   return posts;
 }
@@ -218,8 +279,14 @@ function updateDailyAggregation(dailySheet, dateStr, category) {
 /**
  * 6. Web App JSON API Endpoint (doGet)
  * 프론트엔드(GitHub Pages)에서 fetch() 호출 시 데이터 응답
+ * (type=scrape 파라미터 전달 시 스크래핑 강제 즉시 실행 지원)
  */
 function doGet(e) {
+  // ?type=scrape 인 경우 즉시 스크래퍼 실행
+  if (e && e.parameter && e.parameter.type === 'scrape') {
+    runScraper();
+  }
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const dailySheet = ss.getSheetByName('일별집계');
   const historySheet = ss.getSheetByName('수집이력');
@@ -246,7 +313,7 @@ function doGet(e) {
 
   const historyData = [];
   if (historySheet && historySheet.getLastRow() > 1) {
-    const rows = historySheet.getRange(2, 1, Math.min(historySheet.getLastRow() - 1, 200), 7).getValues();
+    const rows = historySheet.getRange(2, 1, Math.min(historySheet.getLastRow() - 1, 500), 7).getValues();
     rows.forEach(r => {
       historyData.push({
         post_id: String(r[0]),
@@ -277,7 +344,6 @@ function doGet(e) {
  * (최초 1회 실행하면 15분마다 runScraper 자동 실행)
  */
 function createTrigger() {
-  // Existing trigger removal to avoid duplicates
   const triggers = ScriptApp.getProjectTriggers();
   triggers.forEach(t => {
     if (t.getHandlerFunction() === 'runScraper') {
@@ -285,7 +351,6 @@ function createTrigger() {
     }
   });
 
-  // Create 15-minute timer trigger
   ScriptApp.newTrigger('runScraper')
     .timeBased()
     .everyMinutes(15)
