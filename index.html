@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>강동어울림복지관 홍보 통합실적 관리 시스템</title>
+  <meta name="description" content="강동어울림복지관 홈페이지 게시판 신규 게시글 자동 감지 및 홍보 실적 통합 집계 대시보드">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="background-glob bg-glob-1"></div>
+  <div class="background-glob bg-glob-2"></div>
+  <div class="background-glob bg-glob-3"></div>
+
+  <div class="app-container">
+    <!-- Header Section -->
+    <header class="app-header glass-card">
+      <div class="header-brand">
+        <div class="logo-icon">
+          <i class="fa-solid fa-chart-line"></i>
+        </div>
+        <div class="brand-text">
+          <h1>강동어울림복지관</h1>
+          <p class="subtitle">홍보 통합실적 관리 시스템 <span class="badge-v1">v1.0</span></p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="sync-status" id="syncStatus">
+          <span class="status-dot online"></span>
+          <span class="status-text" id="statusText">실시간 동기화 완료</span>
+        </div>
+
+        <div class="clock-display" id="clockDisplay">
+          <i class="fa-regular fa-clock"></i> <span id="kstClock">--:--:-- KST</span>
+        </div>
+
+        <button class="btn btn-secondary" id="apiConfigBtn" title="GAS API 설정">
+          <i class="fa-solid fa-gear"></i> API 설정
+        </button>
+
+        <button class="btn btn-primary" id="refreshBtn" title="실적 데이터 새로고침">
+          <i class="fa-solid fa-rotate-right" id="refreshIcon"></i> 새로고침
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation & Filter Bar -->
+    <nav class="filter-bar glass-card">
+      <div class="filter-group period-filters">
+        <span class="filter-label"><i class="fa-solid fa-calendar-days"></i> 조회 기간:</span>
+        <button class="filter-pill active" data-period="today">오늘</button>
+        <button class="filter-pill" data-period="week">최근 7일</button>
+        <button class="filter-pill" data-period="month">이번 달</button>
+        <button class="filter-pill" data-period="all">전체</button>
+      </div>
+
+      <div class="filter-group date-picker-group">
+        <input type="date" id="startDateInput" class="glass-input">
+        <span class="date-sep">~</span>
+        <input type="date" id="endDateInput" class="glass-input">
+        <button class="btn btn-small" id="applyDateBtn">적용</button>
+      </div>
+    </nav>
+
+    <!-- Main Summary KPIs (Top Row) -->
+    <section class="kpi-section">
+      <!-- Total Summary Card -->
+      <div class="kpi-card total-card glass-card">
+        <div class="kpi-header">
+          <span class="kpi-title">총 홍보 실적</span>
+          <div class="kpi-icon-wrap blue"><i class="fa-solid fa-bullhorn"></i></div>
+        </div>
+        <div class="kpi-value-wrap">
+          <span class="kpi-value" id="totalCount">0</span>
+          <span class="kpi-unit">건</span>
+        </div>
+        <div class="kpi-footer">
+          <span class="trend-badge positive" id="totalTrend">
+            <i class="fa-solid fa-arrow-trend-up"></i> <span id="trendText">전일 대비 반영중</span>
+          </span>
+          <span class="kpi-subtext" id="periodSubtext">오늘 기준 실적</span>
+        </div>
+      </div>
+
+      <!-- Category Cards (7 items) -->
+      <div class="kpi-grid">
+        <!-- 1. 공지사항 -->
+        <div class="kpi-card glass-card category-card" data-cat="공지사항">
+          <div class="kpi-header">
+            <span class="kpi-title">공지사항</span>
+            <span class="cat-tag tag-blue">어울림 소식</span>
+          </div>
+          <div class="kpi-value-wrap">
+            <span class="kpi-value" id="cat-공지사항">0</span>
+            <span class="kpi-unit">건</span>
+          </div>
+          <div class="kpi-footer">
+            <a href="https://gde.or.kr/notice" target="_blank" class="cat-link" title="게시판 이동">
+              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </a>
+          </div>
+        </div>
+
+        <!-- 2. 공시자료 -->
+        <div class="kpi-card glass-card category-card" data-cat="공시자료">
+          <div class="kpi-header">
+            <span class="kpi-title">공시자료</span>
+            <span class="cat-tag tag-blue">어울림 소식</span>
+          </div>
+          <div class="kpi-value-wrap">
+            <span class="kpi-value" id="cat-공시자료">0</span>
+            <span class="kpi-unit">건</span>
+          </div>
+          <div class="kpi-footer">
+            <a href="https://gde.or.kr/infoopen" target="_blank" class="cat-link" title="게시판 이동">
+              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </a>
+          </div>
+        </div>
+
+        <!-- 3. 인재채용 -->
+        <div class="kpi-card glass-card category-card" data-cat="인재채용">
+          <div class="kpi-header">
+            <span class="kpi-title">인재채용</span>
+            <span class="cat-tag tag-blue">어울림 소식</span>
+          </div>
+          <div class="kpi-value-wrap">
+            <span class="kpi-value" id="cat-인재채용">0</span>
+            <span class="kpi-unit">건</span>
+          </div>
+          <div class="kpi-footer">
+            <a href="https://gde.or.kr/recruitment" target="_blank" class="cat-link" title="게시판 이동">
+              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </a>
+          </div>
+        </div>
+
+        <!-- 4. 이용인 모집 -->
+        <div class="kpi-card glass-card category-card" data-cat="이용인모집">
+          <div class="kpi-header">
+            <span class="kpi-title">이용인 모집</span>
+            <span class="cat-tag tag-cyan">어울림 소식</span>
+          </div>
+          <div class="kpi-value-wrap">
+            <span class="kpi-value" id="cat-이용인모집">0</span>
+            <span class="kpi-unit">건</span>
+          </div>
+          <div class="kpi-footer">
+            <a href="https://gde.or.kr/program" target="_blank" class="cat-link" title="게시판 이동">
+              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </a>
+          </div>
+        </div>
+
+        <!-- 5. 정보안내 -->
+        <div class="kpi-card glass-card category-card" data-cat="정보안내">
+          <div class="kpi-header">
+            <span class="kpi-title">정보안내</span>
+            <span class="cat-tag tag-indigo">어울림 소식</span>
+          </div>
+          <div class="kpi-value-wrap">
+            <span class="kpi-value" id="cat-정보안내">0</span>
+            <span class="kpi-unit">건</span>
+          </div>
+          <div class="kpi-footer">
+            <a href="https://gde.or.kr/information" target="_blank" class="cat-link" title="게시판 이동">
+              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </a>
+          </div>
+        </div>
+
+        <!-- 6. 갤러리(전체) -->
+        <div class="kpi-card glass-card category-card" data-cat="갤러리(전체)">
+          <div class="kpi-header">
+            <span class="kpi-title">갤러리(전체)</span>
+            <span class="cat-tag tag-purple">어울림 갤러리</span>
+          </div>
+          <div class="kpi-value-wrap">
+            <span class="kpi-value" id="cat-갤러리(전체)">0</span>
+            <span class="kpi-unit">건</span>
+          </div>
+          <div class="kpi-footer">
+            <a href="https://gde.or.kr/gallery" target="_blank" class="cat-link" title="게시판 이동">
+              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </a>
+          </div>
+        </div>
+
+        <!-- 7. 이용상담문의 -->
+        <div class="kpi-card glass-card category-card" data-cat="이용상담문의">
+          <div class="kpi-header">
+            <span class="kpi-title">이용상담문의</span>
+            <span class="cat-tag tag-emerald">참여하기</span>
+          </div>
+          <div class="kpi-value-wrap">
+            <span class="kpi-value" id="cat-이용상담문의">0</span>
+            <span class="kpi-unit">건</span>
+          </div>
+          <div class="kpi-footer">
+            <a href="https://gde.or.kr/counseling" target="_blank" class="cat-link" title="게시판 이동">
+              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Analytics Charts Section -->
+    <section class="charts-section grid-2-1">
+      <!-- Main Trend Chart -->
+      <div class="chart-card glass-card">
+        <div class="chart-header">
+          <div class="chart-title">
+            <h3><i class="fa-solid fa-chart-area"></i> 일별 실적 추이</h3>
+            <p class="chart-sub">기간별 게시글 등록 건수 변화 그래프</p>
+          </div>
+          <div class="chart-controls">
+            <button class="btn-toggle active" id="chartTypeLine">선형</button>
+            <button class="btn-toggle" id="chartTypeBar">막대</button>
+          </div>
+        </div>
+        <div class="chart-body">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Category Distribution Chart -->
+      <div class="chart-card glass-card">
+        <div class="chart-header">
+          <div class="chart-title">
+            <h3><i class="fa-solid fa-chart-pie"></i> 카테고리별 비중</h3>
+            <p class="chart-sub">전체 게시글 분포 비율</p>
+          </div>
+        </div>
+        <div class="chart-body pie-body">
+          <canvas id="doughnutChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Recent Activity Table Section -->
+    <section class="table-section glass-card">
+      <div class="table-header">
+        <div class="table-title">
+          <h3><i class="fa-solid fa-list-check"></i> 수집 게시글 상세 이력</h3>
+          <span class="table-count" id="tableRecordCount">총 0건 수집됨</span>
+        </div>
+
+        <div class="table-filters">
+          <div class="search-box">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" id="searchInput" placeholder="게시글 제목 검색..." class="glass-input">
+          </div>
+
+          <select id="categoryFilter" class="glass-select">
+            <option value="ALL">전체 카테고리</option>
+            <option value="공지사항">공지사항</option>
+            <option value="공시자료">공시자료</option>
+            <option value="인재채용">인재채용</option>
+            <option value="이용인모집">이용인모집</option>
+            <option value="정보안내">정보안내</option>
+            <option value="갤러리(전체)">갤러리(전체)</option>
+            <option value="이용상담문의">이용상담문의</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="activity-table">
+          <thead>
+            <tr>
+              <th width="14%">게시글 ID</th>
+              <th width="12%">대분류</th>
+              <th width="14%">세부항목</th>
+              <th>게시글 제목</th>
+              <th width="12%">게시일자(KST)</th>
+              <th width="14%">수집시각</th>
+              <th width="8%">링크</th>
+            </tr>
+          </thead>
+          <tbody id="activityTableBody">
+            <tr>
+              <td colspan="7" class="loading-cell">
+                <i class="fa-solid fa-spinner fa-spin"></i> 실적 데이터를 불러오는 중입니다...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-pagination" id="paginationControls">
+        <!-- Dynamic pagination buttons rendered by JS -->
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>Copyright © <strong>강동어울림복지관</strong>. All Rights Reserved. | 홍보 통합실적 관리 앱 (GAS + GitHub Pages)</p>
+      <p class="footer-links">
+        <a href="https://gde.or.kr" target="_blank"><i class="fa-solid fa-globe"></i> 복지관 홈페이지</a> | 
+        <a href="https://github.com/fitsociety-hue/gdshome" target="_blank"><i class="fa-brands fa-github"></i> GitHub 저장소</a>
+      </p>
+    </footer>
+  </div>
+
+  <!-- API Settings Modal -->
+  <div class="modal-backdrop" id="apiModal">
+    <div class="modal-card glass-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-sliders"></i> 백엔드 API (GAS) 연동 설정</h3>
+        <button class="modal-close" id="modalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Google Apps Script(GAS) Web App 배포 URL을 설정합니다.</p>
+        <div class="form-group">
+          <label for="gasUrlInput">GAS Web App URL:</label>
+          <input type="url" id="gasUrlInput" class="glass-input w-full" placeholder="https://script.google.com/macros/s/.../exec">
+        </div>
+        <div class="info-box">
+          <i class="fa-solid fa-circle-info"></i>
+          <div>
+            <strong>현재 연동 URL:</strong>
+            <span id="currentGasUrlDisplay" class="break-all">https://script.google.com/macros/s/AKfycbxI-bCJ5RPaniBenLll1YRHLeySk2YQ_Cg3H_jJILcYP9Je7JoL2rpq7qSXthikAQcw/exec</span>
+          </div>
+        </div>
+        <div class="mode-toggle-wrap">
+          <label class="switch-label">
+            <input type="checkbox" id="demoModeToggle">
+            <span class="slider round"></span>
+          </label>
+          <span>시연용 샘플 데이터 모드 (GAS 백엔드 미적재 시 유용)</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="resetGasUrlBtn">기본값 복원</button>
+        <button class="btn btn-primary" id="saveGasUrlBtn">설정 저장 및 연결</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript -->
+  <script src="script.js"></script>
+</body>
+</html>
