@@ -1,7 +1,7 @@
 /* ==========================================================================
-   강동어울림복지관 홍보 통합실적 관리 앱 - Glassmorphism Design System
+   강동어울림복지관 홍보 통합실적 관리 앱 - Glassmorphism Design System v2.0
    Font: Paperlogy
-   Colors: Pastel & Midtone Blue Theme
+   Colors: Multi-Channel (Website Blue, Naver Blog Green, YouTube Red)
    ========================================================================== */
 
 /* 1. Paperlogy Font Embed */
@@ -34,7 +34,7 @@
 :root {
   --font-family: 'Paperlogy', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   
-  /* Color Palette (Soft & Midtone Blue) */
+  /* Color Palette */
   --bg-gradient-start: #EBF3FF;
   --bg-gradient-end: #F4F7FD;
   
@@ -42,6 +42,15 @@
   --primary-blue-hover: #2563EB;
   --primary-blue-dark: #1D4ED8;
   --primary-blue-light: #EFF6FF;
+
+  --channel-blog: #03C75A;
+  --channel-blog-dark: #029C46;
+  --channel-blog-light: #E6F9EE;
+
+  --channel-youtube: #FF0000;
+  --channel-youtube-dark: #CC0000;
+  --channel-youtube-light: #FFE6E6;
+
   --accent-cyan: #06B6D4;
   --accent-indigo: #6366F1;
   --accent-purple: #8B5CF6;
@@ -131,6 +140,9 @@ body {
   gap: 24px;
 }
 
+.flex-col { flex-direction: column; }
+.gap-3 { gap: 12px; }
+
 /* 4. Glass Card Base Utility */
 .glass-card {
   background: var(--glass-bg);
@@ -192,12 +204,13 @@ body {
 }
 
 .badge-v1 {
-  background: rgba(59, 130, 246, 0.12);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(3, 199, 90, 0.15) 100%);
   color: var(--primary-blue-dark);
   font-size: 0.72rem;
   padding: 2px 8px;
   border-radius: 20px;
   font-weight: 600;
+  border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .header-actions {
@@ -207,7 +220,6 @@ body {
   flex-wrap: wrap;
 }
 
-/* Sync Status Indicator */
 .sync-status {
   display: flex;
   align-items: center;
@@ -306,14 +318,87 @@ body {
   background: var(--primary-blue-hover);
 }
 
-/* 6. Filter Bar Component */
+/* 6. Channel Selector Tabs & Filter Bar Component */
 .filter-bar {
-  padding: 14px 24px;
+  padding: 16px 24px;
+  display: flex;
+}
+
+.channel-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+.channel-tab {
+  padding: 9px 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(203, 213, 225, 0.7);
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--text-medium);
+  font-family: var(--font-family);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: var(--transition-fast);
+}
+
+.channel-tab:hover {
+  background: rgba(255, 255, 255, 0.95);
+  transform: translateY(-1px);
+}
+
+.channel-tab.active {
+  background: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+.channel-tab[data-channel="ALL"].active {
+  border-color: var(--primary-blue);
+  color: var(--primary-blue-dark);
+}
+
+.channel-tab.tab-website.active {
+  border-color: var(--primary-blue);
+  color: var(--primary-blue-dark);
+}
+
+.channel-tab.tab-blog.active {
+  border-color: var(--channel-blog);
+  color: var(--channel-blog-dark);
+}
+
+.channel-tab.tab-youtube.active {
+  border-color: var(--channel-youtube);
+  color: var(--channel-youtube-dark);
+}
+
+.badge-count {
+  background: rgba(241, 245, 249, 0.9);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+
+.channel-tab.active .badge-count {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--primary-blue-dark);
+}
+
+.filter-subrow {
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;
+  width: 100%;
 }
 
 .filter-group {
@@ -384,15 +469,9 @@ body {
 
 /* 7. KPI Section Layout */
 .kpi-section {
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 20px;
-}
-
-@media (max-width: 1100px) {
-  .kpi-section {
-    grid-template-columns: 1fr;
-  }
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .kpi-card {
@@ -406,8 +485,8 @@ body {
 }
 
 .total-card {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(235, 243, 255, 0.9) 100%);
-  border: 1px solid rgba(147, 197, 253, 0.6);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(235, 243, 255, 0.92) 100%);
+  border: 1px solid rgba(147, 197, 253, 0.7);
 }
 
 .kpi-header {
@@ -435,6 +514,16 @@ body {
 .kpi-icon-wrap.blue {
   background: rgba(59, 130, 246, 0.15);
   color: var(--primary-blue-dark);
+}
+
+.kpi-icon-wrap.green {
+  background: rgba(3, 199, 90, 0.15);
+  color: var(--channel-blog-dark);
+}
+
+.kpi-icon-wrap.red {
+  background: rgba(255, 0, 0, 0.15);
+  color: var(--channel-youtube-dark);
 }
 
 .kpi-value-wrap {
@@ -484,29 +573,54 @@ body {
   font-size: 0.8rem;
 }
 
-/* Category KPI Grid (7 cards) */
+/* Channel Groups & Grids */
+.channel-group-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: var(--transition-normal);
+}
+
+.group-header h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-sub {
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.text-blue { color: var(--primary-blue); }
+.text-naver { color: var(--channel-blog); }
+.text-red { color: var(--channel-youtube); }
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
 }
 
+.grid-youtube {
+  grid-template-columns: 280px;
+}
+
 @media (max-width: 1280px) {
-  .kpi-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
 @media (max-width: 768px) {
-  .kpi-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .grid-youtube { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 480px) {
-  .kpi-grid {
-    grid-template-columns: 1fr;
-  }
+  .kpi-grid { grid-template-columns: 1fr; }
 }
 
 .category-card {
@@ -516,6 +630,14 @@ body {
 .category-card:hover {
   transform: translateY(-3px);
   border-color: rgba(59, 130, 246, 0.4);
+}
+
+.card-blog:hover {
+  border-color: rgba(3, 199, 90, 0.5);
+}
+
+.card-youtube:hover {
+  border-color: rgba(255, 0, 0, 0.5);
 }
 
 .cat-tag {
@@ -530,6 +652,8 @@ body {
 .tag-indigo { background: rgba(99, 102, 241, 0.12); color: #4338CA; }
 .tag-purple { background: rgba(139, 92, 246, 0.12); color: #6D28D9; }
 .tag-emerald { background: rgba(16, 185, 129, 0.12); color: #047857; }
+.tag-green { background: rgba(3, 199, 90, 0.15); color: #028A3E; }
+.tag-red { background: rgba(255, 0, 0, 0.12); color: #C00; }
 
 .cat-link {
   color: var(--text-muted);
@@ -662,6 +786,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .search-box {
@@ -679,7 +804,7 @@ body {
 
 .search-box input {
   padding-left: 34px;
-  width: 240px;
+  width: 220px;
 }
 
 .table-wrapper {
@@ -747,6 +872,26 @@ body {
 
 .post-link-btn:hover {
   background: var(--primary-blue);
+  color: #FFFFFF;
+}
+
+.post-link-btn.btn-blog {
+  color: var(--channel-blog-dark);
+  background: rgba(3, 199, 90, 0.12);
+}
+
+.post-link-btn.btn-blog:hover {
+  background: var(--channel-blog);
+  color: #FFFFFF;
+}
+
+.post-link-btn.btn-yt {
+  color: var(--channel-youtube-dark);
+  background: rgba(255, 0, 0, 0.12);
+}
+
+.post-link-btn.btn-yt:hover {
+  background: var(--channel-youtube);
   color: #FFFFFF;
 }
 

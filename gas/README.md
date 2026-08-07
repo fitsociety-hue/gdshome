@@ -48,4 +48,4 @@
 
 - 복사한 **웹 앱 URL**을 프론트엔드 대시보드 우측 상단 **[API 설정]** 버튼을 통해 등록하면 실시간 연동됩니다.
 - 기본 연동 URL:
-  `https://script.google.com/macros/s/AKfycbyUDotrUwAz6D20X5MCeBx8B5H60rZjj-eAPzuta1iEU9OuVheVImzkPxpRHD94f2Ik/exec`
+  `https://script.google.com/macros/s/AKfycbypHZAg1bQRguKDvXGJpkRdfkTY7Aqy9K1LdL5TwLuzkBjcA8QfqPrvjzc9JqxrCuJI/exec`

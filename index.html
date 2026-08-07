@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>강동어울림복지관 홍보 통합실적 관리 시스템</title>
-  <meta name="description" content="강동어울림복지관 홈페이지 게시판 신규 게시글 자동 감지 및 홍보 실적 통합 집계 대시보드">
+  <meta name="description" content="강동어울림복지관 홈페이지, 네이버 블로그, 유튜브 통합 신규 콘텐츠 자동 감지 및 홍보 실적 대시보드">
   
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -29,7 +29,7 @@
         </div>
         <div class="brand-text">
           <h1>강동어울림복지관</h1>
-          <p class="subtitle">홍보 통합실적 관리 시스템 <span class="badge-v1">v1.0</span></p>
+          <p class="subtitle">홍보 통합실적 관리 시스템 <span class="badge-v1">v2.0 Multi-Channel</span></p>
         </div>
       </div>
 
@@ -53,21 +53,40 @@
       </div>
     </header>
 
-    <!-- Navigation & Filter Bar -->
-    <nav class="filter-bar glass-card">
-      <div class="filter-group period-filters">
-        <span class="filter-label"><i class="fa-solid fa-calendar-days"></i> 조회 기간:</span>
-        <button class="filter-pill active" data-period="today">오늘</button>
-        <button class="filter-pill" data-period="week">최근 7일</button>
-        <button class="filter-pill" data-period="month">이번 달</button>
-        <button class="filter-pill" data-period="all">전체</button>
+    <!-- Channel Filter Tabs & Date Filter Bar -->
+    <nav class="filter-bar glass-card flex-col gap-3">
+      <!-- Channel Selector Tabs -->
+      <div class="channel-tabs" id="channelTabs">
+        <button class="channel-tab active" data-channel="ALL">
+          <i class="fa-solid fa-layer-group"></i> 전체 채널 <span class="badge-count" id="tabCountAll">15</span>
+        </button>
+        <button class="channel-tab tab-website" data-channel="홈페이지">
+          <i class="fa-solid fa-globe"></i> 홈페이지 <span class="badge-count" id="tabCountWebsite">7</span>
+        </button>
+        <button class="channel-tab tab-blog" data-channel="네이버 블로그">
+          <i class="fa-bold fa-b" style="font-weight:900;"></i> 네이버 블로그 <span class="badge-count" id="tabCountBlog">7</span>
+        </button>
+        <button class="channel-tab tab-youtube" data-channel="유튜브">
+          <i class="fa-brands fa-youtube"></i> 유튜브 <span class="badge-count" id="tabCountYoutube">1</span>
+        </button>
       </div>
 
-      <div class="filter-group date-picker-group">
-        <input type="date" id="startDateInput" class="glass-input">
-        <span class="date-sep">~</span>
-        <input type="date" id="endDateInput" class="glass-input">
-        <button class="btn btn-small" id="applyDateBtn">적용</button>
+      <!-- Date Period Filters -->
+      <div class="filter-subrow">
+        <div class="filter-group period-filters">
+          <span class="filter-label"><i class="fa-solid fa-calendar-days"></i> 조회 기간:</span>
+          <button class="filter-pill active" data-period="today">오늘</button>
+          <button class="filter-pill" data-period="week">최근 7일</button>
+          <button class="filter-pill" data-period="month">이번 달</button>
+          <button class="filter-pill" data-period="all">전체</button>
+        </div>
+
+        <div class="filter-group date-picker-group">
+          <input type="date" id="startDateInput" class="glass-input">
+          <span class="date-sep">~</span>
+          <input type="date" id="endDateInput" class="glass-input">
+          <button class="btn btn-small" id="applyDateBtn">적용</button>
+        </div>
       </div>
     </nav>
 
@@ -76,8 +95,8 @@
       <!-- Total Summary Card -->
       <div class="kpi-card total-card glass-card">
         <div class="kpi-header">
-          <span class="kpi-title">총 홍보 실적</span>
-          <div class="kpi-icon-wrap blue"><i class="fa-solid fa-bullhorn"></i></div>
+          <span class="kpi-title" id="totalCardTitle">전체 홍보 통합 실적</span>
+          <div class="kpi-icon-wrap blue" id="totalIconWrap"><i class="fa-solid fa-bullhorn"></i></div>
         </div>
         <div class="kpi-value-wrap">
           <span class="kpi-value" id="totalCount">0</span>
@@ -85,130 +104,286 @@
         </div>
         <div class="kpi-footer">
           <span class="trend-badge positive" id="totalTrend">
-            <i class="fa-solid fa-arrow-trend-up"></i> <span id="trendText">전일 대비 반영중</span>
+            <i class="fa-solid fa-arrow-trend-up"></i> <span id="trendText">실시간 실적 집계중</span>
           </span>
           <span class="kpi-subtext" id="periodSubtext">오늘 기준 실적</span>
         </div>
       </div>
 
-      <!-- Category Cards (7 items) -->
-      <div class="kpi-grid">
-        <!-- 1. 공지사항 -->
-        <div class="kpi-card glass-card category-card" data-cat="공지사항">
-          <div class="kpi-header">
-            <span class="kpi-title">공지사항</span>
-            <span class="cat-tag tag-blue">어울림 소식</span>
+      <!-- Channel Section 1: 홈페이지 게시판 (7개) -->
+      <div class="channel-group-container" data-channel-group="홈페이지">
+        <div class="group-header">
+          <h3><i class="fa-solid fa-globe text-blue"></i> 홈페이지 게시판 <span class="group-sub">(gde.or.kr)</span></h3>
+        </div>
+        <div class="kpi-grid">
+          <!-- 1. 공지사항 -->
+          <div class="kpi-card glass-card category-card" data-cat="공지사항" data-channel="홈페이지">
+            <div class="kpi-header">
+              <span class="kpi-title">공지사항</span>
+              <span class="cat-tag tag-blue">홈페이지</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-공지사항">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://gde.or.kr/notice" target="_blank" class="cat-link" title="게시판 이동">
+                페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
           </div>
-          <div class="kpi-value-wrap">
-            <span class="kpi-value" id="cat-공지사항">0</span>
-            <span class="kpi-unit">건</span>
+
+          <!-- 2. 공시자료 -->
+          <div class="kpi-card glass-card category-card" data-cat="공시자료" data-channel="홈페이지">
+            <div class="kpi-header">
+              <span class="kpi-title">공시자료</span>
+              <span class="cat-tag tag-blue">홈페이지</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-공시자료">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://gde.or.kr/infoopen" target="_blank" class="cat-link" title="게시판 이동">
+                페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
           </div>
-          <div class="kpi-footer">
-            <a href="https://gde.or.kr/notice" target="_blank" class="cat-link" title="게시판 이동">
-              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
-            </a>
+
+          <!-- 3. 인재채용 -->
+          <div class="kpi-card glass-card category-card" data-cat="인재채용" data-channel="홈페이지">
+            <div class="kpi-header">
+              <span class="kpi-title">인재채용</span>
+              <span class="cat-tag tag-blue">홈페이지</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-인재채용">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://gde.or.kr/recruitment" target="_blank" class="cat-link" title="게시판 이동">
+                페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
+          </div>
+
+          <!-- 4. 이용인 모집 -->
+          <div class="kpi-card glass-card category-card" data-cat="이용인모집" data-channel="홈페이지">
+            <div class="kpi-header">
+              <span class="kpi-title">이용인 모집</span>
+              <span class="cat-tag tag-cyan">홈페이지</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-이용인모집">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://gde.or.kr/program" target="_blank" class="cat-link" title="게시판 이동">
+                페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
+          </div>
+
+          <!-- 5. 정보안내 -->
+          <div class="kpi-card glass-card category-card" data-cat="정보안내" data-channel="홈페이지">
+            <div class="kpi-header">
+              <span class="kpi-title">정보안내</span>
+              <span class="cat-tag tag-indigo">홈페이지</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-정보안내">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://gde.or.kr/information" target="_blank" class="cat-link" title="게시판 이동">
+                페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
+          </div>
+
+          <!-- 6. 갤러리(전체) -->
+          <div class="kpi-card glass-card category-card" data-cat="갤러리(전체)" data-channel="홈페이지">
+            <div class="kpi-header">
+              <span class="kpi-title">갤러리(전체)</span>
+              <span class="cat-tag tag-purple">홈페이지</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-갤러리(전체)">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://gde.or.kr/gallery" target="_blank" class="cat-link" title="게시판 이동">
+                페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
+          </div>
+
+          <!-- 7. 이용상담문의 -->
+          <div class="kpi-card glass-card category-card" data-cat="이용상담문의" data-channel="홈페이지">
+            <div class="kpi-header">
+              <span class="kpi-title">이용상담문의</span>
+              <span class="cat-tag tag-emerald">홈페이지</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-이용상담문의">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://gde.or.kr/counseling" target="_blank" class="cat-link" title="게시판 이동">
+                페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
           </div>
         </div>
+      </div>
 
-        <!-- 2. 공시자료 -->
-        <div class="kpi-card glass-card category-card" data-cat="공시자료">
-          <div class="kpi-header">
-            <span class="kpi-title">공시자료</span>
-            <span class="cat-tag tag-blue">어울림 소식</span>
-          </div>
-          <div class="kpi-value-wrap">
-            <span class="kpi-value" id="cat-공시자료">0</span>
-            <span class="kpi-unit">건</span>
-          </div>
-          <div class="kpi-footer">
-            <a href="https://gde.or.kr/infoopen" target="_blank" class="cat-link" title="게시판 이동">
-              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
-            </a>
+      <!-- Channel Section 2: 유튜브 채널 (1개) -->
+      <div class="channel-group-container" data-channel-group="유튜브">
+        <div class="group-header">
+          <h3><i class="fa-brands fa-youtube text-red"></i> 유튜브 채널 <span class="group-sub">(@강동어울림복지관)</span></h3>
+        </div>
+        <div class="kpi-grid grid-youtube">
+          <div class="kpi-card glass-card category-card card-youtube" data-cat="유튜브(동영상)" data-channel="유튜브">
+            <div class="kpi-header">
+              <span class="kpi-title">신규 업로드 동영상</span>
+              <span class="cat-tag tag-red">유튜브</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-유튜브(동영상)">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://www.youtube.com/@%EA%B0%95%EB%8F%99%EC%96%B4%EC%9A%B8%EB%A6%BC%EB%B3%B5%EC%A7%80%EA%B4%80" target="_blank" class="cat-link" title="채널 이동">
+                채널 바로가기 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
           </div>
         </div>
+      </div>
 
-        <!-- 3. 인재채용 -->
-        <div class="kpi-card glass-card category-card" data-cat="인재채용">
-          <div class="kpi-header">
-            <span class="kpi-title">인재채용</span>
-            <span class="cat-tag tag-blue">어울림 소식</span>
-          </div>
-          <div class="kpi-value-wrap">
-            <span class="kpi-value" id="cat-인재채용">0</span>
-            <span class="kpi-unit">건</span>
-          </div>
-          <div class="kpi-footer">
-            <a href="https://gde.or.kr/recruitment" target="_blank" class="cat-link" title="게시판 이동">
-              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
-            </a>
-          </div>
+      <!-- Channel Section 3: 네이버 블로그 (7개 카테고리) -->
+      <div class="channel-group-container" data-channel-group="네이버 블로그">
+        <div class="group-header">
+          <h3><i class="fa-bold fa-b text-naver"></i> 네이버 블로그 <span class="group-sub">(blog.naver.com/gds0741)</span></h3>
         </div>
+        <div class="kpi-grid">
+          <!-- 1. 블로그-전체 -->
+          <div class="kpi-card glass-card category-card card-blog" data-cat="블로그-전체" data-channel="네이버 블로그">
+            <div class="kpi-header">
+              <span class="kpi-title">전체보기</span>
+              <span class="cat-tag tag-green">네이버 블로그</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-블로그-전체">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://blog.naver.com/gds0741" target="_blank" class="cat-link" title="블로그 이동">
+                블로그 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
+          </div>
 
-        <!-- 4. 이용인 모집 -->
-        <div class="kpi-card glass-card category-card" data-cat="이용인모집">
-          <div class="kpi-header">
-            <span class="kpi-title">이용인 모집</span>
-            <span class="cat-tag tag-cyan">어울림 소식</span>
+          <!-- 2. 블로그-공지사항 -->
+          <div class="kpi-card glass-card category-card card-blog" data-cat="블로그-공지사항" data-channel="네이버 블로그">
+            <div class="kpi-header">
+              <span class="kpi-title">공지사항</span>
+              <span class="cat-tag tag-green">네이버 블로그</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-블로그-공지사항">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://blog.naver.com/gds0741" target="_blank" class="cat-link" title="블로그 이동">
+                블로그 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
           </div>
-          <div class="kpi-value-wrap">
-            <span class="kpi-value" id="cat-이용인모집">0</span>
-            <span class="kpi-unit">건</span>
-          </div>
-          <div class="kpi-footer">
-            <a href="https://gde.or.kr/program" target="_blank" class="cat-link" title="게시판 이동">
-              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
-            </a>
-          </div>
-        </div>
 
-        <!-- 5. 정보안내 -->
-        <div class="kpi-card glass-card category-card" data-cat="정보안내">
-          <div class="kpi-header">
-            <span class="kpi-title">정보안내</span>
-            <span class="cat-tag tag-indigo">어울림 소식</span>
+          <!-- 3. 블로그-복지관소식 -->
+          <div class="kpi-card glass-card category-card card-blog" data-cat="블로그-복지관소식" data-channel="네이버 블로그">
+            <div class="kpi-header">
+              <span class="kpi-title">복지관소식</span>
+              <span class="cat-tag tag-green">네이버 블로그</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-블로그-복지관소식">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://blog.naver.com/gds0741" target="_blank" class="cat-link" title="블로그 이동">
+                블로그 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
           </div>
-          <div class="kpi-value-wrap">
-            <span class="kpi-value" id="cat-정보안내">0</span>
-            <span class="kpi-unit">건</span>
-          </div>
-          <div class="kpi-footer">
-            <a href="https://gde.or.kr/information" target="_blank" class="cat-link" title="게시판 이동">
-              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
-            </a>
-          </div>
-        </div>
 
-        <!-- 6. 갤러리(전체) -->
-        <div class="kpi-card glass-card category-card" data-cat="갤러리(전체)">
-          <div class="kpi-header">
-            <span class="kpi-title">갤러리(전체)</span>
-            <span class="cat-tag tag-purple">어울림 갤러리</span>
+          <!-- 4. 블로그-복지정보 -->
+          <div class="kpi-card glass-card category-card card-blog" data-cat="블로그-복지정보" data-channel="네이버 블로그">
+            <div class="kpi-header">
+              <span class="kpi-title">복지정보</span>
+              <span class="cat-tag tag-green">네이버 블로그</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-블로그-복지정보">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://blog.naver.com/gds0741" target="_blank" class="cat-link" title="블로그 이동">
+                블로그 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
           </div>
-          <div class="kpi-value-wrap">
-            <span class="kpi-value" id="cat-갤러리(전체)">0</span>
-            <span class="kpi-unit">건</span>
-          </div>
-          <div class="kpi-footer">
-            <a href="https://gde.or.kr/gallery" target="_blank" class="cat-link" title="게시판 이동">
-              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
-            </a>
-          </div>
-        </div>
 
-        <!-- 7. 이용상담문의 -->
-        <div class="kpi-card glass-card category-card" data-cat="이용상담문의">
-          <div class="kpi-header">
-            <span class="kpi-title">이용상담문의</span>
-            <span class="cat-tag tag-emerald">참여하기</span>
+          <!-- 5. 블로그-도서추천 -->
+          <div class="kpi-card glass-card category-card card-blog" data-cat="블로그-도서추천" data-channel="네이버 블로그">
+            <div class="kpi-header">
+              <span class="kpi-title">도서 추천</span>
+              <span class="cat-tag tag-green">네이버 블로그</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-블로그-도서추천">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://blog.naver.com/gds0741" target="_blank" class="cat-link" title="블로그 이동">
+                블로그 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
           </div>
-          <div class="kpi-value-wrap">
-            <span class="kpi-value" id="cat-이용상담문의">0</span>
-            <span class="kpi-unit">건</span>
+
+          <!-- 6. 블로그-프로그램모집 -->
+          <div class="kpi-card glass-card category-card card-blog" data-cat="블로그-프로그램모집" data-channel="네이버 블로그">
+            <div class="kpi-header">
+              <span class="kpi-title">프로그램모집</span>
+              <span class="cat-tag tag-green">네이버 블로그</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-블로그-프로그램모집">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://blog.naver.com/gds0741" target="_blank" class="cat-link" title="블로그 이동">
+                블로그 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
           </div>
-          <div class="kpi-footer">
-            <a href="https://gde.or.kr/counseling" target="_blank" class="cat-link" title="게시판 이동">
-              페이지 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
-            </a>
+
+          <!-- 7. 블로그-배너 -->
+          <div class="kpi-card glass-card category-card card-blog" data-cat="블로그-배너" data-channel="네이버 블로그">
+            <div class="kpi-header">
+              <span class="kpi-title">배너</span>
+              <span class="cat-tag tag-green">네이버 블로그</span>
+            </div>
+            <div class="kpi-value-wrap">
+              <span class="kpi-value" id="cat-블로그-배너">0</span>
+              <span class="kpi-unit">건</span>
+            </div>
+            <div class="kpi-footer">
+              <a href="https://blog.naver.com/gds0741" target="_blank" class="cat-link" title="블로그 이동">
+                블로그 이동 <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -220,8 +395,8 @@
       <div class="chart-card glass-card">
         <div class="chart-header">
           <div class="chart-title">
-            <h3><i class="fa-solid fa-chart-area"></i> 일별 실적 추이</h3>
-            <p class="chart-sub">기간별 게시글 등록 건수 변화 그래프</p>
+            <h3><i class="fa-solid fa-chart-area"></i> 채널별/일별 실적 추이</h3>
+            <p class="chart-sub">기간별 콘텐츠 등록 건수 변화 그래프</p>
           </div>
           <div class="chart-controls">
             <button class="btn-toggle active" id="chartTypeLine">선형</button>
@@ -237,8 +412,8 @@
       <div class="chart-card glass-card">
         <div class="chart-header">
           <div class="chart-title">
-            <h3><i class="fa-solid fa-chart-pie"></i> 카테고리별 비중</h3>
-            <p class="chart-sub">전체 게시글 분포 비율</p>
+            <h3><i class="fa-solid fa-chart-pie"></i> 카테고리별 실적 비중</h3>
+            <p class="chart-sub">전체 홍보 콘텐츠 분포 비율</p>
           </div>
         </div>
         <div class="chart-body pie-body">
@@ -251,25 +426,46 @@
     <section class="table-section glass-card">
       <div class="table-header">
         <div class="table-title">
-          <h3><i class="fa-solid fa-list-check"></i> 수집 게시글 상세 이력</h3>
+          <h3><i class="fa-solid fa-list-check"></i> 수집 콘텐츠 상세 이력</h3>
           <span class="table-count" id="tableRecordCount">총 0건 수집됨</span>
         </div>
 
         <div class="table-filters">
           <div class="search-box">
             <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" id="searchInput" placeholder="게시글 제목 검색..." class="glass-input">
+            <input type="text" id="searchInput" placeholder="콘텐츠 제목 또는 ID 검색..." class="glass-input">
           </div>
+
+          <select id="channelTableFilter" class="glass-select">
+            <option value="ALL">전체 채널</option>
+            <option value="홈페이지">홈페이지 (gde.or.kr)</option>
+            <option value="네이버 블로그">네이버 블로그</option>
+            <option value="유튜브">유튜브</option>
+          </select>
 
           <select id="categoryFilter" class="glass-select">
             <option value="ALL">전체 카테고리</option>
-            <option value="공지사항">공지사항</option>
-            <option value="공시자료">공시자료</option>
-            <option value="인재채용">인재채용</option>
-            <option value="이용인모집">이용인모집</option>
-            <option value="정보안내">정보안내</option>
-            <option value="갤러리(전체)">갤러리(전체)</option>
-            <option value="이용상담문의">이용상담문의</option>
+            <optgroup label="홈페이지">
+              <option value="공지사항">홈페이지 - 공지사항</option>
+              <option value="공시자료">홈페이지 - 공시자료</option>
+              <option value="인재채용">홈페이지 - 인재채용</option>
+              <option value="이용인모집">홈페이지 - 이용인모집</option>
+              <option value="정보안내">홈페이지 - 정보안내</option>
+              <option value="갤러리(전체)">홈페이지 - 갤러리(전체)</option>
+              <option value="이용상담문의">홈페이지 - 이용상담문의</option>
+            </optgroup>
+            <optgroup label="유튜브">
+              <option value="유튜브(동영상)">유튜브 - 신규 동영상</option>
+            </optgroup>
+            <optgroup label="네이버 블로그">
+              <option value="블로그-전체">블로그 - 전체보기</option>
+              <option value="블로그-공지사항">블로그 - 공지사항</option>
+              <option value="블로그-복지관소식">블로그 - 복지관소식</option>
+              <option value="블로그-복지정보">블로그 - 복지정보</option>
+              <option value="블로그-도서추천">블로그 - 도서 추천</option>
+              <option value="블로그-프로그램모집">블로그 - 프로그램모집</option>
+              <option value="블로그-배너">블로그 - 배너</option>
+            </optgroup>
           </select>
         </div>
       </div>
@@ -278,10 +474,10 @@
         <table class="activity-table">
           <thead>
             <tr>
-              <th width="14%">게시글 ID</th>
-              <th width="12%">대분류</th>
+              <th width="14%">콘텐츠 ID</th>
+              <th width="10%">채널</th>
               <th width="14%">세부항목</th>
-              <th>게시글 제목</th>
+              <th>콘텐츠 제목</th>
               <th width="12%">게시일자(KST)</th>
               <th width="14%">수집시각</th>
               <th width="8%">링크</th>
@@ -307,6 +503,8 @@
       <p>Copyright © <strong>강동어울림복지관</strong>. All Rights Reserved. | 홍보 통합실적 관리 앱 (GAS + GitHub Pages)</p>
       <p class="footer-links">
         <a href="https://gde.or.kr" target="_blank"><i class="fa-solid fa-globe"></i> 복지관 홈페이지</a> | 
+        <a href="https://blog.naver.com/gds0741" target="_blank"><i class="fa-bold fa-b"></i> 네이버 블로그</a> | 
+        <a href="https://www.youtube.com/@%EA%B0%95%EB%8F%99%EC%96%B4%EC%9A%B8%EB%A6%BC%EB%B3%B5%EC%A7%80%EA%B4%80" target="_blank"><i class="fa-brands fa-youtube"></i> 유튜브 채널</a> | 
         <a href="https://github.com/fitsociety-hue/gdshome" target="_blank"><i class="fa-brands fa-github"></i> GitHub 저장소</a>
       </p>
     </footer>
@@ -329,7 +527,7 @@
           <i class="fa-solid fa-circle-info"></i>
           <div>
             <strong>현재 연동 URL:</strong>
-            <span id="currentGasUrlDisplay" class="break-all">https://script.google.com/macros/s/AKfycbyUDotrUwAz6D20X5MCeBx8B5H60rZjj-eAPzuta1iEU9OuVheVImzkPxpRHD94f2Ik/exec</span>
+            <span id="currentGasUrlDisplay" class="break-all">https://script.google.com/macros/s/AKfycbypHZAg1bQRguKDvXGJpkRdfkTY7Aqy9K1LdL5TwLuzkBjcA8QfqPrvjzc9JqxrCuJI/exec</span>
           </div>
         </div>
         <div class="mode-toggle-wrap">
