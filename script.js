@@ -4,7 +4,7 @@
  */
 
 // 1. App Configuration & Constants (고정 백엔드 API URL 단일 관리)
-const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbwj1GVMC8fMSlvBhSpSpTX6KgGIxPKf0X_ryqrDEVrqkEPSPov2pHM2zSgaHAJbkBaS/exec';
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbwzr_0GHEUwNVNnJKMPbKtavZh9pRXlUPn7v58wg4uGu660BLObAMbAT7Yo-bbX6U6V/exec';
 
 const CATEGORIES = [
   // 홈페이지 (7)
