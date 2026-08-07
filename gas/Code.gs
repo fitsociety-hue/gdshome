@@ -7,8 +7,9 @@
  *   2. 유튜브 채널 신규 업로드 동영상 감지 (YouTube Channel RSS / Atom XML)
  *   3. 네이버 블로그 카테고리별 신규 포스팅 감지 (Naver Blog RSS XML)
  *   4. post_id 기반 중복 제거 및 Google Sheets 적재
- *   5. KST 기준 일별/채널별/카테고리별 실적 인덱스 기반 인코딩 안전 카운팅
- *   6. 프론트엔드(GitHub Pages) 연결용 Web App JSON API (doGet)
+ *   5. 레거시(7열)/신규(9열) 수집이력 시트 스키마 및 동적 일별집계 칼럼 호환 파싱
+ *   6. KST 기준 일별/채널별/카테고리별 실적 인덱스 기반 인코딩 안전 카운팅
+ *   7. 프론트엔드(GitHub Pages) 연결용 Web App JSON API (doGet)
  * ==========================================================================
  */
 
@@ -52,6 +53,13 @@ function initSheets() {
   if (historySheet.getLastRow() === 0) {
     historySheet.appendRow(['post_id', '채널', '대분류', '중분류', '세부항목', '제목', '게시일(KST)', '수집시각', '원문URL']);
     historySheet.getRange('A1:I1').setBackground('#E2E8F0').setFontWeight('bold');
+  } else {
+    // 수집이력 첫번째 행에 '채널' 열이 없는 레거시 시트인 경우 자동으로 헤더 업데이트
+    const firstRow = historySheet.getRange(1, 1, 1, historySheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
+    if (!firstRow.includes('채널')) {
+      historySheet.getRange(1, 1, 1, 9).setValues([['post_id', '채널', '대분류', '중분류', '세부항목', '제목', '게시일(KST)', '수집시각', '원문URL']]);
+      historySheet.getRange('A1:I1').setBackground('#E2E8F0').setFontWeight('bold');
+    }
   }
 
   // ② 일별집계 시트
@@ -83,14 +91,15 @@ function initSheets() {
 
 /**
  * 3. 메인 스크래핑 및 카운팅 엔진
- * (15분 주기 시간 기반 트리거 및 API 요청 시 즉시 실행 가능)
  */
 function runScraper() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const historySheet = ss.getSheetByName('수집이력') || ss.insertSheet('수집이력');
   const dailySheet = ss.getSheetByName('일별집계') || ss.insertSheet('일별집계');
 
-  // 기존 수집된 post_id 목록 (중복 제거용 Set)
+  // 레거시/신규 시트 헤더 체크
+  initSheets();
+
   const existingPostIds = new Set();
   if (historySheet.getLastRow() > 1) {
     const historyData = historySheet.getRange(2, 1, historySheet.getLastRow() - 1, 1).getValues();
@@ -134,7 +143,7 @@ function runScraper() {
               post.url || conf.url
             ]);
 
-            updateDailyAggregation(dailySheet, post.date, conf.index);
+            updateDailyAggregation(dailySheet, post.date, conf.category);
           }
         });
       }
@@ -172,7 +181,7 @@ function runScraper() {
               post.url
             ]);
 
-            updateDailyAggregation(dailySheet, post.date, ytConfig.index);
+            updateDailyAggregation(dailySheet, post.date, ytConfig.category);
           }
         });
       }
@@ -211,7 +220,7 @@ function runScraper() {
               post.url
             ]);
 
-            updateDailyAggregation(dailySheet, post.date, conf.index);
+            updateDailyAggregation(dailySheet, post.date, conf.category);
           }
         });
       });
@@ -231,7 +240,6 @@ function parseGnuboardHtml(html, conf) {
   const cleanHtml = html.replace(/<!--[\s\S]*?-->/g, '');
   const seenIds = {};
 
-  // 컨테이너 블록 수집 (<tr>, <li>, <div class="gall_box">)
   const blocks = [];
 
   const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
@@ -259,7 +267,6 @@ function parseGnuboardHtml(html, conf) {
     const wrId = wrIdMatch[1];
     if (seenIds[wrId]) return;
 
-    // 제목 추출
     let title = "";
     const boTitMatch = block.match(/class=["'][^"']*bo_tit[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
     if (boTitMatch) {
@@ -277,7 +284,6 @@ function parseGnuboardHtml(html, conf) {
     title = title.replace(/\s*N\s*새글\s*$/i, '').replace(/\s*새글\s*$/i, '').trim();
     if (!title || title.length < 2 || title.indexOf('답변') !== -1 || title.indexOf('제목') !== -1) return;
 
-    // 작성일 추출 (4자리 연도 및 2자리 연도 모두 대응)
     let dateStr = "";
     const dm4 = block.match(/\b(20\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/);
     if (dm4) {
@@ -429,11 +435,12 @@ function hashCode(str) {
 }
 
 /**
- * 7. 일별 집계 시트 업데이트 함수
+ * 7. 동적 헤더 기반 일별 집계 시트 업데이트 함수
  */
-function updateDailyAggregation(dailySheet, dateStr, confIndex) {
-  if (confIndex < 0 || confIndex >= TARGET_CONFIGS.length) return;
-  const colIndex = confIndex + 2;
+function updateDailyAggregation(dailySheet, dateStr, confCategory) {
+  const headerRow = dailySheet.getRange(1, 1, 1, dailySheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
+  let colIndex = headerRow.indexOf(confCategory) + 1;
+  if (colIndex <= 0) return;
 
   const lastRow = dailySheet.getLastRow();
   let targetRowIndex = -1;
@@ -458,22 +465,22 @@ function updateDailyAggregation(dailySheet, dateStr, confIndex) {
     const currentVal = Number(dailySheet.getRange(targetRowIndex, colIndex).getValue()) || 0;
     dailySheet.getRange(targetRowIndex, colIndex).setValue(currentVal + 1);
     
-    const rowVals = dailySheet.getRange(targetRowIndex, 2, 1, TARGET_CONFIGS.length).getValues()[0];
+    // Recalculate total
+    const rowVals = dailySheet.getRange(targetRowIndex, 2, 1, dailySheet.getLastColumn() - 2).getValues()[0];
     const rowTotal = rowVals.reduce((acc, v) => acc + (Number(v) || 0), 0);
-    dailySheet.getRange(targetRowIndex, TARGET_CONFIGS.length + 2).setValue(rowTotal);
+    dailySheet.getRange(targetRowIndex, dailySheet.getLastColumn()).setValue(rowTotal);
   } else {
-    const newRow = [dateStr, ...new Array(TARGET_CONFIGS.length).fill(0), 0];
+    const newRow = [dateStr, ...new Array(dailySheet.getLastColumn() - 2).fill(0), 0];
     newRow[colIndex - 1] = 1;
-    newRow[TARGET_CONFIGS.length + 1] = 1;
+    newRow[dailySheet.getLastColumn() - 1] = 1;
     dailySheet.appendRow(newRow);
   }
 }
 
 /**
- * 8. Web App JSON API Endpoint (doGet)
+ * 8. Web App JSON API Endpoint (doGet) - 레거시(7열) 및 신규(9열) 스키마 완벽 호환
  */
 function doGet(e) {
-  // 항상 스크래핑을 실행하여 최신 게시글(예: 테스트용 게시글 426 등) 즉시 반영
   try {
     runScraper();
   } catch (err) {
@@ -486,43 +493,89 @@ function doGet(e) {
 
   const dailyData = [];
   if (dailySheet && dailySheet.getLastRow() > 1) {
-    const colCount = TARGET_CONFIGS.length + 2;
+    const colCount = dailySheet.getLastColumn();
+    const headers = dailySheet.getRange(1, 1, 1, colCount).getValues()[0].map(h => String(h).trim());
     const rows = dailySheet.getRange(2, 1, dailySheet.getLastRow() - 1, colCount).getValues();
+
     rows.forEach(r => {
       const dateStr = r[0] instanceof Date ? 
         Utilities.formatDate(r[0], "Asia/Seoul", "yyyy-MM-dd") : String(r[0]).trim().substring(0, 10);
       
       const cats = {};
-      CATEGORIES.forEach((c, idx) => {
-        cats[c] = Number(r[idx + 1]) || 0;
+      CATEGORIES.forEach(c => cats[c] = 0);
+
+      headers.forEach((h, idx) => {
+        if (idx > 0 && idx < colCount - 1) {
+          if (cats.hasOwnProperty(h)) {
+            cats[h] = Number(r[idx]) || 0;
+          }
+        }
       });
 
+      let dayTotal = Number(r[colCount - 1]) || 0;
       dailyData.push({
         date: dateStr,
         categories: cats,
-        total: Number(r[colCount - 1]) || 0
+        total: dayTotal
       });
     });
   }
 
   const historyData = [];
   if (historySheet && historySheet.getLastRow() > 1) {
+    const headerRow = historySheet.getRange(1, 1, 1, historySheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
+    const hasChannelCol = headerRow.includes('채널');
+
     const totalRows = historySheet.getLastRow() - 1;
     const readRows = Math.min(totalRows, 800);
     const startRow = Math.max(2, historySheet.getLastRow() - readRows + 1);
-    const rows = historySheet.getRange(startRow, 1, readRows, 9).getValues();
-    
+    const rows = historySheet.getRange(startRow, 1, readRows, historySheet.getLastColumn()).getValues();
+
+    const categoryChannels = {
+      '공지사항': '홈페이지', '공시자료': '홈페이지', '인재채용': '홈페이지',
+      '이용인모집': '홈페이지', '정보안내': '홈페이지', '갤러리(전체)': '홈페이지',
+      '이용상담문의': '홈페이지', '유튜브(동영상)': '유튜브'
+    };
+
     rows.reverse().forEach(r => {
+      let postId, channel, mainCategory, subCategory, category, title, date, collectedAt, url;
+
+      if (hasChannelCol && r.length >= 8) {
+        postId = String(r[0]);
+        channel = String(r[1] || '홈페이지');
+        mainCategory = String(r[2]);
+        subCategory = String(r[3]);
+        category = String(r[4]);
+        title = String(r[5]);
+        date = r[6];
+        collectedAt = r[7];
+        url = String(r[8] || '');
+      } else {
+        // 레거시 7열 시트 구조 (post_id, 대분류, 중분류, 세부항목, 제목, 게시일, 수집시각)
+        postId = String(r[0]);
+        mainCategory = String(r[1]);
+        subCategory = String(r[2]);
+        category = String(r[3]);
+        title = String(r[4]);
+        channel = categoryChannels[category] || '홈페이지';
+        date = r[5];
+        collectedAt = r[6];
+        url = '';
+      }
+
+      const dateStr = date instanceof Date ? Utilities.formatDate(date, "Asia/Seoul", "yyyy-MM-dd") : String(date).substring(0, 10);
+      const collectedStr = collectedAt instanceof Date ? Utilities.formatDate(collectedAt, "Asia/Seoul", "yyyy-MM-dd HH:mm:ss") : String(collectedAt);
+
       historyData.push({
-        post_id: String(r[0]),
-        channel: String(r[1] || '홈페이지'),
-        main_category: String(r[2]),
-        sub_category: String(r[3]),
-        category: String(r[4]),
-        title: String(r[5]),
-        date: r[6] instanceof Date ? Utilities.formatDate(r[6], "Asia/Seoul", "yyyy-MM-dd") : String(r[6]).substring(0, 10),
-        collected_at: r[7] instanceof Date ? Utilities.formatDate(r[7], "Asia/Seoul", "yyyy-MM-dd HH:mm:ss") : String(r[7]),
-        url: String(r[8] || '')
+        post_id: postId,
+        channel: channel,
+        main_category: mainCategory,
+        sub_category: subCategory,
+        category: category,
+        title: title,
+        date: dateStr,
+        collected_at: collectedStr,
+        url: url
       });
     });
   }

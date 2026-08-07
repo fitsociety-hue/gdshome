@@ -129,7 +129,7 @@ function updateKSTClock() {
   clockEl.textContent = `${dateStr} ${timeStr} KST`;
 }
 
-// 4. Sample Fallback Generator (네트워크 지연/연동 예외 시 대비용)
+// 4. Sample Fallback Generator
 function generateMockData() {
   const todayStr = getTodayKST();
   const today = new Date(todayStr);
@@ -288,30 +288,43 @@ async function loadData(forceScrape = false) {
   }
 }
 
+/**
+ * history 수집이력 데이터를 기반으로 daily 일별집계를 실시간 보완 재계산
+ */
 function rebuildDailyFromHistoryIfNeeded() {
   if (!state.rawHistoryData || state.rawHistoryData.length === 0) return;
 
   const historyByDate = {};
   state.rawHistoryData.forEach(item => {
-    const d = item.date;
-    const cat = item.category;
+    let d = item.date;
+    let cat = item.category;
     if (!d || !cat) return;
+
+    if (d.includes('T')) d = d.split('T')[0];
+    if (d.length > 10) d = d.substring(0, 10);
+
+    // 레거시 시트 호환 (category가 예외적으로 sub_category에 위치한 경우 보완)
+    if (!CATEGORIES.includes(cat) && CATEGORIES.includes(item.sub_category)) {
+      cat = item.sub_category;
+    }
 
     if (!historyByDate[d]) {
       historyByDate[d] = { date: d, categories: {}, total: 0 };
       CATEGORIES.forEach(c => historyByDate[d].categories[c] = 0);
     }
-    historyByDate[d].categories[cat] = (historyByDate[d].categories[cat] || 0) + 1;
-    
-    if (cat !== '블로그-전체') {
-      historyByDate[d].total += 1;
+
+    if (CATEGORIES.includes(cat)) {
+      historyByDate[d].categories[cat] = (historyByDate[d].categories[cat] || 0) + 1;
+      if (cat !== '블로그-전체') {
+        historyByDate[d].total += 1;
+      }
     }
   });
 
   Object.keys(historyByDate).forEach(d => {
     const existingIndex = state.rawDailyData.findIndex(item => item.date === d);
     if (existingIndex !== -1) {
-      if (historyByDate[d].total > (state.rawDailyData[existingIndex].total || 0)) {
+      if (historyByDate[d].total >= (state.rawDailyData[existingIndex].total || 0)) {
         state.rawDailyData[existingIndex] = historyByDate[d];
       }
     } else {
