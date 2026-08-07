@@ -84,6 +84,20 @@ const CATEGORY_URLS = {
   '블로그-배너': 'https://blog.naver.com/gds0741'
 };
 
+// 과거 수집 시 수집일로 잘못 등록되었던 게시글의 실제 게시일자 매핑 테이블
+const KNOWN_POST_DATES = {
+  'gallery_421': '2026-08-03',
+  'gallery_422': '2026-08-03',
+  'gallery_423': '2026-08-03',
+  'gallery_424': '2026-08-03',
+  'gallery_425': '2026-08-05',
+  'gallery_426': '2026-08-07',
+  'program_178': '2026-08-05',
+  'program_179': '2026-08-05',
+  'recruitment_88': '2026-08-05',
+  'infoopen_56': '2026-08-05'
+};
+
 /**
  * 채널명 표준화 함수 (홈페이지 / 네이버 블로그 / 유튜브)
  */
@@ -267,14 +281,13 @@ async function loadData(forceScrape = false) {
   const refreshIcon = document.getElementById('refreshIcon');
   if (refreshIcon) refreshIcon.classList.add('fa-spin');
 
-  // 초고속 브라우저 세션 캐시 확인 (새로고침 아닐 때 0ms 즉시 복원)
+  // 세션 캐시 확인
   if (!forceScrape) {
     const cachedData = sessionStorage.getItem('gdshome_cached_data');
     if (cachedData) {
       try {
         const parsed = JSON.parse(cachedData);
         if (parsed.daily && parsed.history) {
-          state.rawDailyData = parsed.daily;
           state.rawHistoryData = normalizeHistoryArray(parsed.history);
           rebuildDailyFromHistoryIfNeeded();
           setSyncStatus('online', '고속 캐시 데이터 로드 완료');
@@ -294,11 +307,9 @@ async function loadData(forceScrape = false) {
 
     const json = await response.json();
     if (json.status === 'success' && json.daily && json.history) {
-      state.rawDailyData = json.daily;
       state.rawHistoryData = normalizeHistoryArray(json.history);
       rebuildDailyFromHistoryIfNeeded();
 
-      // 세션 캐시 저장 (다음 조회 시 초고속 반환)
       try {
         sessionStorage.setItem('gdshome_cached_data', JSON.stringify({
           daily: state.rawDailyData,
@@ -310,16 +321,16 @@ async function loadData(forceScrape = false) {
     } else {
       console.warn('GAS 응답 데이터 미비, 샘플 모드로 표출합니다.', json);
       const mock = generateMockData();
-      state.rawDailyData = mock.daily;
       state.rawHistoryData = normalizeHistoryArray(mock.history);
+      rebuildDailyFromHistoryIfNeeded();
       setSyncStatus('online', '실시간 연동 완료');
     }
   } catch (err) {
     console.error('데이터 로드 오류:', err);
     if (!state.rawHistoryData || state.rawHistoryData.length === 0) {
       const mock = generateMockData();
-      state.rawDailyData = mock.daily;
       state.rawHistoryData = normalizeHistoryArray(mock.history);
+      rebuildDailyFromHistoryIfNeeded();
     }
     setSyncStatus('online', '실시간 연동 완료');
   } finally {
@@ -329,7 +340,7 @@ async function loadData(forceScrape = false) {
 }
 
 /**
- * 수집이력 데이터 항목별 채널 및 카테고리 100% 정규화
+ * 수집이력 데이터 항목별 채널, 카테고리, 실제 게시일자 정규화
  */
 function normalizeHistoryArray(historyArr) {
   return historyArr.map(item => {
@@ -340,16 +351,22 @@ function normalizeHistoryArray(historyArr) {
       normCat = item.sub_category;
     }
 
+    let normDate = item.date;
+    if (KNOWN_POST_DATES[item.post_id]) {
+      normDate = KNOWN_POST_DATES[item.post_id];
+    }
+
     return {
       ...item,
       channel: normCh,
-      category: normCat
+      category: normCat,
+      date: normDate
     };
   });
 }
 
 /**
- * history 수집이력 데이터를 기반으로 daily 일별집계를 실시간 보완 재계산
+ * history 수집이력 데이터를 기반으로 daily 일별집계를 100% 정밀 재계산
  */
 function rebuildDailyFromHistoryIfNeeded() {
   if (!state.rawHistoryData || state.rawHistoryData.length === 0) return;
@@ -362,10 +379,6 @@ function rebuildDailyFromHistoryIfNeeded() {
 
     if (d.includes('T')) d = d.split('T')[0];
     if (d.length > 10) d = d.substring(0, 10);
-
-    if (!CATEGORIES.includes(cat) && CATEGORIES.includes(item.sub_category)) {
-      cat = item.sub_category;
-    }
 
     if (!historyByDate[d]) {
       historyByDate[d] = { date: d, categories: {}, total: 0 };
@@ -380,18 +393,7 @@ function rebuildDailyFromHistoryIfNeeded() {
     }
   });
 
-  Object.keys(historyByDate).forEach(d => {
-    const existingIndex = state.rawDailyData.findIndex(item => item.date === d);
-    if (existingIndex !== -1) {
-      if (historyByDate[d].total >= (state.rawDailyData[existingIndex].total || 0)) {
-        state.rawDailyData[existingIndex] = historyByDate[d];
-      }
-    } else {
-      state.rawDailyData.push(historyByDate[d]);
-    }
-  });
-
-  state.rawDailyData.sort((a, b) => a.date.localeCompare(b.date));
+  state.rawDailyData = Object.values(historyByDate).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function setSyncStatus(type, message) {
@@ -695,7 +697,7 @@ function renderDoughnutChart(categoryCounts) {
   state.doughnutChartInstance = new Chart(ctx, config);
 }
 
-// 9. Recent Activity History Table Logic (완벽 채널 필터링 & 초고속 검색)
+// 9. Recent Activity History Table Logic
 function renderHistoryTable() {
   const tbody = document.getElementById('activityTableBody');
   const countEl = document.getElementById('tableRecordCount');

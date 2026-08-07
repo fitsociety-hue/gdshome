@@ -3,11 +3,11 @@
  * 강동어울림복지관 홍보 통합실적 관리 앱 - Google Apps Script (GAS) 백엔드 Code.gs
  * ==========================================================================
  * - 역할: 
- *   1. 복지관 7개 게시판 정기 스크래핑 (gde.or.kr - 범용 GNUBoard 스킨/카드/테이블 대응)
+ *   1. 복지관 7개 게시판 정기 스크래핑 (gde.or.kr - 갤러리 상세페이지 정밀 게시일 추출)
  *   2. 유튜브 채널 신규 업로드 동영상 감지 (YouTube Channel RSS / Atom XML)
  *   3. 네이버 블로그 카테고리별 신규 포스팅 감지 (Naver Blog RSS XML)
  *   4. post_id 기반 중복 제거 및 Google Sheets 고속 적재
- *   5. 레거시(7열) 및 신규(9열) 수집이력 시트 자동 마이그레이션 및 데이터 구조 정규화
+ *   5. 레거시(7열) 및 신규(9열) 수집이력 시트 자동 마이그레이션 및 게시일자 자동 보정
  *   6. 채널 정규화 (홈페이지 / 네이버 블로그 / 유튜브) 100% 정확한 필터링 보장
  *   7. 프론트엔드(GitHub Pages) 연결용 Web App JSON API (doGet)
  * ==========================================================================
@@ -39,6 +39,20 @@ const TARGET_CONFIGS = [
 
 const CATEGORIES = TARGET_CONFIGS.map(c => c.category);
 
+// 과거 수집 시 수집일로 잘못 등록되었던 게시글의 실제 게시일자 매핑 테이블
+const KNOWN_POST_DATES = {
+  'gallery_421': '2026-08-03',
+  'gallery_422': '2026-08-03',
+  'gallery_423': '2026-08-03',
+  'gallery_424': '2026-08-03',
+  'gallery_425': '2026-08-05',
+  'gallery_426': '2026-08-07',
+  'program_178': '2026-08-05',
+  'program_179': '2026-08-05',
+  'recruitment_88': '2026-08-05',
+  'infoopen_56': '2026-08-05'
+};
+
 /**
  * 채널명 표준화 함수 (홈페이지 / 네이버 블로그 / 유튜브)
  */
@@ -65,7 +79,6 @@ function initSheets() {
     historySheet.appendRow(['post_id', '채널', '대분류', '중분류', '세부항목', '제목', '게시일(KST)', '수집시각', '원문URL']);
     historySheet.getRange('A1:I1').setBackground('#E2E8F0').setFontWeight('bold');
   } else {
-    // 레거시 시트 자동 마이그레이션
     const firstRow = historySheet.getRange(1, 1, 1, historySheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
     if (!firstRow.includes('채널')) {
       historySheet.getRange(1, 1, 1, 9).setValues([['post_id', '채널', '대분류', '중분류', '세부항목', '제목', '게시일(KST)', '수집시각', '원문URL']]);
@@ -241,7 +254,32 @@ function runScraper() {
 }
 
 /**
- * 4. 범용 GNUBoard 파싱 함수
+ * 갤러리 등 목록에 날짜가 없는 경우 상세페이지에서 작성일자 추출
+ */
+function fetchDetailDate(boTable, wrId) {
+  try {
+    const detailUrl = `https://gde.or.kr/bbs/board.php?bo_table=${boTable}&wr_id=${wrId}`;
+    const response = UrlFetchApp.fetch(detailUrl, {
+      muteHttpExceptions: true,
+      followRedirects: true,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+    });
+
+    if (response.getResponseCode() === 200) {
+      const html = response.getContentText('UTF-8');
+      const dm4 = html.match(/\b(20\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/);
+      if (dm4) return dm4[1].replace(/[\/.]/g, '-');
+      const dm2 = html.match(/\b(\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/);
+      if (dm2) return "20" + dm2[1].replace(/[\/.]/g, '-');
+    }
+  } catch (e) {
+    Logger.log(`상세페이지 날짜 조회 에러 [${boTable}_${wrId}]: ${e.toString()}`);
+  }
+  return "";
+}
+
+/**
+ * 4. 범용 GNUBoard 파싱 함수 (갤러리 상세페이지 게시일 자동 보완)
  */
 function parseGnuboardHtml(html, conf) {
   const posts = [];
@@ -300,6 +338,16 @@ function parseGnuboardHtml(html, conf) {
       const dm2 = block.match(/\b(\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/);
       if (dm2) {
         dateStr = "20" + dm2[1].replace(/[\/.]/g, '-');
+      }
+    }
+
+    // 갤러리 등 목록에 날짜가 없는 경우 상세페이지에서 작성일자 직접 추출
+    if (!dateStr) {
+      const postIdKey = `${conf.boTable}_${wrId}`;
+      if (KNOWN_POST_DATES[postIdKey]) {
+        dateStr = KNOWN_POST_DATES[postIdKey];
+      } else {
+        dateStr = fetchDetailDate(conf.boTable, wrId);
       }
     }
 
@@ -485,7 +533,7 @@ function updateDailyAggregation(dailySheet, dateStr, confCategory) {
 }
 
 /**
- * 8. Web App JSON API Endpoint (doGet) - 초고속 수집 데이터 반환 & 정규화 채널 바인딩
+ * 8. Web App JSON API Endpoint (doGet) - 초고속 수집 데이터 반환 & 실제 게시일 정밀 보정
  */
 function doGet(e) {
   try {
@@ -495,38 +543,7 @@ function doGet(e) {
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const dailySheet = ss.getSheetByName('일별집계');
   const historySheet = ss.getSheetByName('수집이력');
-
-  const dailyData = [];
-  if (dailySheet && dailySheet.getLastRow() > 1) {
-    const colCount = dailySheet.getLastColumn();
-    const headers = dailySheet.getRange(1, 1, 1, colCount).getValues()[0].map(h => String(h).trim());
-    const rows = dailySheet.getRange(2, 1, dailySheet.getLastRow() - 1, colCount).getValues();
-
-    rows.forEach(r => {
-      const dateStr = r[0] instanceof Date ? 
-        Utilities.formatDate(r[0], "Asia/Seoul", "yyyy-MM-dd") : String(r[0]).trim().substring(0, 10);
-      
-      const cats = {};
-      CATEGORIES.forEach(c => cats[c] = 0);
-
-      headers.forEach((h, idx) => {
-        if (idx > 0 && idx < colCount - 1) {
-          if (cats.hasOwnProperty(h)) {
-            cats[h] = Number(r[idx]) || 0;
-          }
-        }
-      });
-
-      let dayTotal = Number(r[colCount - 1]) || 0;
-      dailyData.push({
-        date: dateStr,
-        categories: cats,
-        total: dayTotal
-      });
-    });
-  }
 
   const historyData = [];
   if (historySheet && historySheet.getLastRow() > 1) {
@@ -563,7 +580,7 @@ function doGet(e) {
         url = '';
       }
 
-      // 채널명 표준화 (홈페이지 / 네이버 블로그 / 유튜브)
+      // 채널명 표준화
       const normChannel = normalizeChannel(channel, mainCategory, category);
 
       // 카테고리 정상 위치 보완
@@ -571,8 +588,13 @@ function doGet(e) {
         category = subCategory;
       }
 
-      const dateStr = date instanceof Date ? Utilities.formatDate(date, "Asia/Seoul", "yyyy-MM-dd") : String(date).substring(0, 10);
+      let dateStr = date instanceof Date ? Utilities.formatDate(date, "Asia/Seoul", "yyyy-MM-dd") : String(date).substring(0, 10);
       const collectedStr = collectedAt instanceof Date ? Utilities.formatDate(collectedAt, "Asia/Seoul", "yyyy-MM-dd HH:mm:ss") : String(collectedAt);
+
+      // 실제 게시일 매핑 테이블 보정 (과거 수집 시 수집일로 오등록되었던 데이터 보정)
+      if (KNOWN_POST_DATES[postId]) {
+        dateStr = KNOWN_POST_DATES[postId];
+      }
 
       historyData.push({
         post_id: postId,
@@ -587,6 +609,28 @@ function doGet(e) {
       });
     });
   }
+
+  // historyData를 기반으로 daily 일별집계를 실시간 동적 재계산하여 정확한 통계 보장
+  const historyByDate = {};
+  historyData.forEach(item => {
+    const d = item.date;
+    const cat = item.category;
+    if (!d || !cat) return;
+
+    if (!historyByDate[d]) {
+      historyByDate[d] = { date: d, categories: {}, total: 0 };
+      CATEGORIES.forEach(c => historyByDate[d].categories[c] = 0);
+    }
+
+    if (CATEGORIES.includes(cat)) {
+      historyByDate[d].categories[cat] = (historyByDate[d].categories[cat] || 0) + 1;
+      if (cat !== '블로그-전체') {
+        historyByDate[d].total += 1;
+      }
+    }
+  });
+
+  const dailyData = Object.values(historyByDate).sort((a, b) => a.date.localeCompare(b.date));
 
   const result = {
     status: 'success',
