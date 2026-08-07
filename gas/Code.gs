@@ -3,7 +3,7 @@
  * 강동어울림복지관 홍보 통합실적 관리 앱 - Google Apps Script (GAS) 백엔드 Code.gs
  * ==========================================================================
  * - 역할: 
- *   1. 복지관 7개 게시판 정기 스크래핑 (gde.or.kr - GNUBoard 스킨 대응)
+ *   1. 복지관 7개 게시판 정기 스크래핑 (gde.or.kr - 범용 GNUBoard 스킨/카드/테이블 대응)
  *   2. 유튜브 채널 신규 업로드 동영상 감지 (YouTube Channel RSS / Atom XML)
  *   3. 네이버 블로그 카테고리별 신규 포스팅 감지 (Naver Blog RSS XML)
  *   4. post_id 기반 중복 제거 및 Google Sheets 적재
@@ -78,12 +78,12 @@ function initSheets() {
     configSheet.getRange('A1:F1').setBackground('#E2E8F0').setFontWeight('bold');
   }
 
-  Logger.log('시트 초기화 세팅 완료! (15개 카테고리 지원)');
+  Logger.log('시트 초기화 세팅 완료!');
 }
 
 /**
  * 3. 메인 스크래핑 및 카운팅 엔진
- * (15분 주기 시간 기반 트리거로 자동 실행)
+ * (15분 주기 시간 기반 트리거 및 API 요청 시 즉시 실행 가능)
  */
 function runScraper() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -191,7 +191,6 @@ function runScraper() {
       const blogPosts = parseNaverBlogRss(xml);
 
       blogPosts.forEach(post => {
-        // 블로그 포스팅은 전체보기 카테고리와 해당 세부 카테고리에 동시 적재
         const matchedConfigs = getBlogMatchedConfigs(post.rawCategory);
 
         matchedConfigs.forEach(conf => {
@@ -225,83 +224,81 @@ function runScraper() {
 }
 
 /**
- * 4. GNUBoard HTML 파싱 함수
+ * 4. 범용 GNUBoard 파싱 함수 (테이블, 갤러리 카드, 모바일/스킨 변형 완벽 대처)
  */
 function parseGnuboardHtml(html, conf) {
   const posts = [];
   const cleanHtml = html.replace(/<!--[\s\S]*?-->/g, '');
   const seenIds = {};
 
+  // 컨테이너 블록 수집 (<tr>, <li>, <div class="gall_box">)
+  const blocks = [];
+
   const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let trMatch;
   while ((trMatch = trRegex.exec(cleanHtml)) !== null) {
-    const tr = trMatch[1];
-    const wrIdMatch = tr.match(/wr_id=(\d+)/i);
-    if (!wrIdMatch) continue;
-    
-    const wrId = wrIdMatch[1];
-    if (seenIds[wrId]) continue;
-
-    let title = "";
-    const boTitMatch = tr.match(/class=["'][^"']*bo_tit[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
-    if (boTitMatch) title = boTitMatch[1].replace(/<[^>]+>/g, '').trim();
-    if (!title) {
-      const titleAttrMatch = tr.match(/title=["']([^"']+)["']/i);
-      if (titleAttrMatch) title = titleAttrMatch[1].trim();
-    }
-
-    title = title.replace(/\s*N\s*새글\s*$/i, '').replace(/\s*새글\s*$/i, '').trim();
-    if (!title || title.length < 2 || title.indexOf('답변') !== -1 || title.indexOf('제목') !== -1) continue;
-
-    let dateStr = "";
-    const tdDateMatch = tr.match(/class=["'][^"']*td_datetime[^"']*["'][^>]*>([\s\S]*?)<\/td>/i);
-    if (tdDateMatch) {
-      const textDate = tdDateMatch[1].replace(/<[^>]+>/g, '').trim();
-      const dm = textDate.match(/\b(20\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/);
-      if (dm) dateStr = dm[1].replace(/[\/.]/g, '-');
-    }
-    if (!dateStr) {
-      const textOnly = tr.replace(/<[^>]+>/g, ' ');
-      const dm = textOnly.match(/\b(20\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/);
-      if (dm) dateStr = dm[1].replace(/[\/.]/g, '-');
-    }
-
-    if (dateStr) {
-      seenIds[wrId] = true;
-      posts.push({ wrId: wrId, title: title, date: dateStr, url: `${conf.url}?wr_id=${wrId}` });
-    }
+    blocks.push(trMatch[1]);
   }
 
-  const liRegex = /<li[^>]*class=["'][^"']*gall_li[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi;
+  const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
   let liMatch;
   while ((liMatch = liRegex.exec(cleanHtml)) !== null) {
-    const li = liMatch[1];
-    const wrIdMatch = li.match(/wr_id=(\d+)/i);
-    if (!wrIdMatch) continue;
+    blocks.push(liMatch[1]);
+  }
+
+  const divRegex = /<div[^>]*class=["'][^"']*gall_box[^"']*["'][^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/gi;
+  let divMatch;
+  while ((divMatch = divRegex.exec(cleanHtml)) !== null) {
+    blocks.push(divMatch[1]);
+  }
+
+  blocks.forEach(block => {
+    const wrIdMatch = block.match(/wr_id=(\d+)/i);
+    if (!wrIdMatch) return;
 
     const wrId = wrIdMatch[1];
-    if (seenIds[wrId]) continue;
+    if (seenIds[wrId]) return;
 
+    // 제목 추출
     let title = "";
-    const boTitMatch = li.match(/class=["'][^"']*bo_tit[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
-    if (boTitMatch) title = boTitMatch[1].replace(/<[^>]+>/g, '').trim();
+    const boTitMatch = block.match(/class=["'][^"']*bo_tit[^"']*["'][^>]*>([\s\S]*?)<\/a>/i);
+    if (boTitMatch) {
+      title = boTitMatch[1].replace(/<[^>]+>/g, '').trim();
+    }
     if (!title) {
-      const titleAttrMatch = li.match(/title=["']([^"']+)["']/i);
+      const titleAttrMatch = block.match(/title=["']([^"']+)["']/i);
       if (titleAttrMatch) title = titleAttrMatch[1].trim();
+    }
+    if (!title) {
+      const linkMatch = block.match(new RegExp(`href=["'][^"']*wr_id=${wrId}[^"']*["'][^>]*>([\\s\\S]*?)<\\/a>`, 'i'));
+      if (linkMatch) title = linkMatch[1].replace(/<[^>]+>/g, '').trim();
     }
 
     title = title.replace(/\s*N\s*새글\s*$/i, '').replace(/\s*새글\s*$/i, '').trim();
-    if (!title || title.length < 2) continue;
+    if (!title || title.length < 2 || title.indexOf('답변') !== -1 || title.indexOf('제목') !== -1) return;
 
-    const textOnly = li.replace(/<[^>]+>/g, ' ');
-    const dm = textOnly.match(/\b(20\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/);
-    const dateStr = dm ? dm[1].replace(/[\/.]/g, '-') : "";
+    // 작성일 추출 (4자리 연도 및 2자리 연도 모두 대응)
+    let dateStr = "";
+    const dm4 = block.match(/\b(20\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/);
+    if (dm4) {
+      dateStr = dm4[1].replace(/[\/.]/g, '-');
+    } else {
+      const dm2 = block.match(/\b(\d{2}[-.\/]\d{2}[-.\/]\d{2})\b/);
+      if (dm2) {
+        dateStr = "20" + dm2[1].replace(/[\/.]/g, '-');
+      }
+    }
 
     if (dateStr) {
       seenIds[wrId] = true;
-      posts.push({ wrId: wrId, title: title, date: dateStr, url: `${conf.url}?wr_id=${wrId}` });
+      posts.push({
+        wrId: wrId,
+        title: title,
+        date: dateStr,
+        url: `${conf.url}?wr_id=${wrId}`
+      });
     }
-  }
+  });
 
   return posts;
 }
@@ -326,7 +323,6 @@ function parseYouTubeRss(xml, conf) {
       const title = titleMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
       const rawPub = pubMatch[1].trim();
       
-      // Parse ISO date string to KST date 'yyyy-MM-dd'
       const pubDate = new Date(rawPub);
       const dateStr = Utilities.formatDate(pubDate, "Asia/Seoul", "yyyy-MM-dd");
       const videoUrl = linkMatch ? linkMatch[1] : `https://www.youtube.com/watch?v=${videoId}`;
@@ -363,11 +359,9 @@ function parseNaverBlogRss(xml) {
       const link = linkMatch[1].trim();
       const rawCategory = catMatch ? catMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, '$1').replace(/<[^>]+>/g, '').trim() : '소식';
       
-      // Extract logNo from link (e.g. https://blog.naver.com/gds0741/223537000000)
       const logNoMatch = link.match(/\/(\d+)\s*$/) || link.match(/logNo=(\d+)/i);
       const logNo = logNoMatch ? logNoMatch[1] : String(Math.abs(hashCode(link)));
 
-      // Parse pubDate (RFC 822 format: e.g. "Wed, 05 Aug 2026 13:36:01 +0900")
       const pubDateText = pubDateMatch[1].trim();
       let dateStr = "";
       try {
@@ -390,18 +384,13 @@ function parseNaverBlogRss(xml) {
   return posts;
 }
 
-/**
- * 네이버 블로그 카테고리 매핑 규칙 (전체보기 1개 + 세부 1개)
- */
 function getBlogMatchedConfigs(rawCat) {
   const blogConfigs = TARGET_CONFIGS.filter(c => c.type === 'blog');
   const matched = [];
 
-  // ① 항상 '블로그-전체' 매핑 포함
   const allConf = blogConfigs.find(c => c.category === '블로그-전체');
   if (allConf) matched.push(allConf);
 
-  // ② 세부 카테고리 매핑
   const catClean = rawCat.replace(/\s+/g, '');
 
   if (catClean.indexOf('공지') !== -1) {
@@ -423,7 +412,6 @@ function getBlogMatchedConfigs(rawCat) {
     const c = blogConfigs.find(conf => conf.category === '블로그-배너');
     if (c) matched.push(c);
   } else {
-    // 디폴트: 복지관소식
     const c = blogConfigs.find(conf => conf.category === '블로그-복지관소식');
     if (c && !matched.includes(c)) matched.push(c);
   }
@@ -441,11 +429,11 @@ function hashCode(str) {
 }
 
 /**
- * 7. 일별 집계 시트 업데이트 함수 (인덱스 기반 15개 항목)
+ * 7. 일별 집계 시트 업데이트 함수
  */
 function updateDailyAggregation(dailySheet, dateStr, confIndex) {
   if (confIndex < 0 || confIndex >= TARGET_CONFIGS.length) return;
-  const colIndex = confIndex + 2; // Col B (2) to Col P (16)
+  const colIndex = confIndex + 2;
 
   const lastRow = dailySheet.getLastRow();
   let targetRowIndex = -1;
@@ -470,14 +458,13 @@ function updateDailyAggregation(dailySheet, dateStr, confIndex) {
     const currentVal = Number(dailySheet.getRange(targetRowIndex, colIndex).getValue()) || 0;
     dailySheet.getRange(targetRowIndex, colIndex).setValue(currentVal + 1);
     
-    // Recalculate total sum in last col (17)
     const rowVals = dailySheet.getRange(targetRowIndex, 2, 1, TARGET_CONFIGS.length).getValues()[0];
     const rowTotal = rowVals.reduce((acc, v) => acc + (Number(v) || 0), 0);
     dailySheet.getRange(targetRowIndex, TARGET_CONFIGS.length + 2).setValue(rowTotal);
   } else {
     const newRow = [dateStr, ...new Array(TARGET_CONFIGS.length).fill(0), 0];
     newRow[colIndex - 1] = 1;
-    newRow[TARGET_CONFIGS.length + 1] = 1; // Total
+    newRow[TARGET_CONFIGS.length + 1] = 1;
     dailySheet.appendRow(newRow);
   }
 }
@@ -486,12 +473,11 @@ function updateDailyAggregation(dailySheet, dateStr, confIndex) {
  * 8. Web App JSON API Endpoint (doGet)
  */
 function doGet(e) {
-  if (e && e.parameter) {
-    if (e.parameter.type === 'reset') {
-      resetAndScrape();
-    } else if (e.parameter.type === 'scrape') {
-      runScraper();
-    }
+  // 항상 스크래핑을 실행하여 최신 게시글(예: 테스트용 게시글 426 등) 즉시 반영
+  try {
+    runScraper();
+  } catch (err) {
+    Logger.log("doGet 스크래퍼 실행 경고: " + err.toString());
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -522,7 +508,7 @@ function doGet(e) {
   const historyData = [];
   if (historySheet && historySheet.getLastRow() > 1) {
     const totalRows = historySheet.getLastRow() - 1;
-    const readRows = Math.min(totalRows, 600);
+    const readRows = Math.min(totalRows, 800);
     const startRow = Math.max(2, historySheet.getLastRow() - readRows + 1);
     const rows = historySheet.getRange(startRow, 1, readRows, 9).getValues();
     

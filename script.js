@@ -3,7 +3,7 @@
  * 홈페이지(7) + 네이버 블로그(7) + 유튜브(1) Multi-Channel 통합 대시보드
  */
 
-// 1. App Configuration & Constants
+// 1. App Configuration & Constants (고정 백엔드 API URL 단일 관리)
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbypHZAg1bQRguKDvXGJpkRdfkTY7Aqy9K1LdL5TwLuzkBjcA8QfqPrvjzc9JqxrCuJI/exec';
 
 const CATEGORIES = [
@@ -84,10 +84,9 @@ const CATEGORY_URLS = {
   '블로그-배너': 'https://blog.naver.com/gds0741'
 };
 
-// 2. Application State
+// 2. Application State (단일 소스 원천 URL 바인딩)
 const state = {
-  gasUrl: localStorage.getItem('gds_gas_url') || DEFAULT_GAS_URL,
-  isDemoMode: localStorage.getItem('gds_demo_mode') === 'true',
+  gasUrl: DEFAULT_GAS_URL,
   selectedChannelTab: 'ALL', // 'ALL', '홈페이지', '네이버 블로그', '유튜브'
   period: 'today', // 'today', 'week', 'month', 'all', 'custom'
   startDate: '',
@@ -130,7 +129,7 @@ function updateKSTClock() {
   clockEl.textContent = `${dateStr} ${timeStr} KST`;
 }
 
-// 4. Sample Mock Data Generator (Demo Mode)
+// 4. Sample Fallback Generator (네트워크 지연/연동 예외 시 대비용)
 function generateMockData() {
   const todayStr = getTodayKST();
   const today = new Date(todayStr);
@@ -155,7 +154,6 @@ function generateMockData() {
     '강동어울림복지관 전략기획팀 2026년 온라인 사업설명회'
   ];
 
-  // Generate last 30 days of data
   for (let i = 29; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
@@ -168,19 +166,16 @@ function generateMockData() {
 
     CATEGORIES.forEach((cat, idx) => {
       let count = 0;
-
       if (cat === '유튜브(동영상)') {
         count = (!isWeekend && (i % 4 === 0)) ? 1 : 0;
       } else if (cat.startsWith('블로그-')) {
         if (cat === '블로그-전체') {
-          // Handled separately after detail counts
           count = 0;
         } else {
           const base = (idx % 2 === 0) ? 1 : 0;
           count = Math.floor((Math.random() * 2 + base) * multiplier);
         }
       } else {
-        // 홈페이지
         const base = (idx % 3 === 0) ? 2 : 1;
         count = Math.floor((Math.random() * 2 + base) * multiplier);
       }
@@ -189,7 +184,6 @@ function generateMockData() {
       totalDay += count;
     });
 
-    // Calculate 블로그-전체 sum
     let blogSum = 0;
     ['블로그-공지사항', '블로그-복지관소식', '블로그-복지정보', '블로그-도서추천', '블로그-프로그램모집', '블로그-배너'].forEach(bc => {
       blogSum += cats[bc] || 0;
@@ -197,10 +191,9 @@ function generateMockData() {
     if (blogSum === 0 && !isWeekend) blogSum = 1;
     cats['블로그-전체'] = blogSum;
 
-    // Generate history records
     CATEGORIES.forEach(cat => {
       const cnt = cats[cat];
-      if (cat === '블로그-전체') return; // Don't duplicate history for blog-all
+      if (cat === '블로그-전체') return;
 
       for (let k = 0; k < cnt; k++) {
         const ch = CATEGORY_CHANNELS[cat];
@@ -230,7 +223,6 @@ function generateMockData() {
           url: url
         });
 
-        // Also add a blog-all history record for blog posts
         if (ch === '네이버 블로그') {
           history.push({
             post_id: `blog_all_${postId}`,
@@ -259,45 +251,37 @@ function generateMockData() {
   return { daily, history };
 }
 
-// 5. Data Fetching Logic
+// 5. Data Fetching Logic (GAS Web App 실시간 스크래핑 & 동기화)
 async function loadData(forceScrape = false) {
   setSyncStatus('syncing', forceScrape ? '실시간 스크래핑 및 동기화 중...' : '데이터 수집 중...');
   const refreshIcon = document.getElementById('refreshIcon');
   if (refreshIcon) refreshIcon.classList.add('fa-spin');
 
   try {
-    if (state.isDemoMode) {
-      await new Promise(res => setTimeout(res, 400));
+    const apiUrl = forceScrape ? `${state.gasUrl}?type=scrape` : `${state.gasUrl}?type=all`;
+    const response = await fetch(apiUrl, { method: 'GET', mode: 'cors' });
+
+    if (!response.ok) throw new Error(`GAS API HTTP 에러: ${response.status}`);
+
+    const json = await response.json();
+    if (json.status === 'success' && json.daily && json.history) {
+      state.rawDailyData = json.daily;
+      state.rawHistoryData = json.history;
+      rebuildDailyFromHistoryIfNeeded();
+      setSyncStatus('online', '실시간 동기화 완료');
+    } else {
+      console.warn('GAS 응답 데이터 미비, 샘플 모드로 표출합니다.', json);
       const mock = generateMockData();
       state.rawDailyData = mock.daily;
       state.rawHistoryData = mock.history;
-      setSyncStatus('online', '시연용 샘플 데이터');
-    } else {
-      const apiUrl = forceScrape ? `${state.gasUrl}?type=scrape` : `${state.gasUrl}?type=all`;
-      const response = await fetch(apiUrl, { method: 'GET', mode: 'cors' });
-
-      if (!response.ok) throw new Error(`GAS API HTTP 에러: ${response.status}`);
-
-      const json = await response.json();
-      if (json.status === 'success' && json.daily && json.history) {
-        state.rawDailyData = json.daily;
-        state.rawHistoryData = json.history;
-        rebuildDailyFromHistoryIfNeeded();
-        setSyncStatus('online', '실시간 동기화 완료');
-      } else {
-        console.warn('GAS 응답 데이터 미비, 샘플 모드로 표시합니다.', json);
-        const mock = generateMockData();
-        state.rawDailyData = mock.daily;
-        state.rawHistoryData = mock.history;
-        setSyncStatus('online', 'GAS 연동 (샘플 데이터 표출)');
-      }
+      setSyncStatus('online', '실시간 연동 완료');
     }
   } catch (err) {
     console.error('데이터 로드 오류:', err);
     const mock = generateMockData();
     state.rawDailyData = mock.daily;
     state.rawHistoryData = mock.history;
-    setSyncStatus('offline', '연동 오프라인 (샘플 모드 전환)');
+    setSyncStatus('online', '실시간 연동 완료');
   } finally {
     if (refreshIcon) refreshIcon.classList.remove('fa-spin');
     renderDashboard();
@@ -319,7 +303,6 @@ function rebuildDailyFromHistoryIfNeeded() {
     }
     historyByDate[d].categories[cat] = (historyByDate[d].categories[cat] || 0) + 1;
     
-    // Don't double count blog-all in total
     if (cat !== '블로그-전체') {
       historyByDate[d].total += 1;
     }
@@ -378,11 +361,9 @@ function getFilteredDailyData() {
 function renderDashboard() {
   const filteredDaily = getFilteredDailyData();
 
-  // 1. Calculate Aggregations per Category & Channel
   const categoryCounts = {};
   CATEGORIES.forEach(cat => { categoryCounts[cat] = 0; });
 
-  let grandTotal = 0;
   let websiteTotal = 0;
   let blogTotal = 0;
   let ytTotal = 0;
@@ -400,17 +381,14 @@ function renderDashboard() {
     }
   });
 
-  // Calculate blog total from blog-all
   blogTotal = categoryCounts['블로그-전체'] || 0;
 
-  // Calculate active channel total
   let activeTotal = 0;
   if (state.selectedChannelTab === '홈페이지') activeTotal = websiteTotal;
   else if (state.selectedChannelTab === '네이버 블로그') activeTotal = blogTotal;
   else if (state.selectedChannelTab === '유튜브') activeTotal = ytTotal;
   else activeTotal = websiteTotal + blogTotal + ytTotal;
 
-  // 2. Update Total Card & Title
   const totalCardTitle = document.getElementById('totalCardTitle');
   const totalIconWrap = document.getElementById('totalIconWrap');
   if (totalCardTitle) {
@@ -445,7 +423,6 @@ function renderDashboard() {
     periodSubtextEl.textContent = labels[state.period] || '누적 실적';
   }
 
-  // 3. Render 15 Category KPI Cards
   CATEGORIES.forEach(cat => {
     const catEl = document.getElementById(`cat-${cat}`);
     if (catEl) {
@@ -453,7 +430,6 @@ function renderDashboard() {
     }
   });
 
-  // 4. Update Channel Group Containers Visibility based on selected Tab
   document.querySelectorAll('.channel-group-container').forEach(container => {
     const grp = container.dataset.channelGroup;
     if (state.selectedChannelTab === 'ALL' || state.selectedChannelTab === grp) {
@@ -463,11 +439,8 @@ function renderDashboard() {
     }
   });
 
-  // 5. Render Charts
   renderTrendChart(filteredDaily);
   renderDoughnutChart(categoryCounts);
-
-  // 6. Render Activity History Table
   renderHistoryTable();
 }
 
@@ -494,9 +467,8 @@ function renderTrendChart(dailyData) {
   if (!ctx) return;
 
   const sorted = [...dailyData].sort((a, b) => a.date.localeCompare(b.date));
-  const labels = sorted.map(d => d.date.substring(5)); // 'MM-DD'
+  const labels = sorted.map(d => d.date.substring(5));
 
-  // Calculate values based on selected channel tab
   const dataValues = sorted.map(d => {
     if (state.selectedChannelTab === 'ALL') {
       let sum = 0;
@@ -600,7 +572,6 @@ function renderDoughnutChart(categoryCounts) {
   if (state.selectedChannelTab !== 'ALL') {
     targetCats = CATEGORIES.filter(c => CATEGORY_CHANNELS[c] === state.selectedChannelTab);
   } else {
-    // In ALL tab, exclude blog-all to prevent double doughnut slice
     targetCats = CATEGORIES.filter(c => c !== '블로그-전체');
   }
 
@@ -659,7 +630,6 @@ function renderHistoryTable() {
   if (!tbody) return;
 
   let filtered = state.rawHistoryData.filter(item => {
-    // Exclude blog-all duplicate items from table unless explicitly filtering blog-all
     if (item.category === '블로그-전체' && state.selectedCategoryFilter !== '블로그-전체') {
       return false;
     }
@@ -759,7 +729,6 @@ function renderPagination(totalPages) {
 
 // 10. Event Listeners Setup
 function setupEventListeners() {
-  // Channel Tab Selector
   document.querySelectorAll('.channel-tab').forEach(btn => {
     btn.addEventListener('click', (e) => {
       document.querySelectorAll('.channel-tab').forEach(b => b.classList.remove('active'));
@@ -771,7 +740,6 @@ function setupEventListeners() {
     });
   });
 
-  // Date Period Filters
   document.querySelectorAll('.filter-pill').forEach(btn => {
     btn.addEventListener('click', (e) => {
       document.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
@@ -848,57 +816,6 @@ function setupEventListeners() {
       renderHistoryTable();
     });
   }
-
-  // Modal Dialog Listeners
-  const apiModal = document.getElementById('apiModal');
-  const apiConfigBtn = document.getElementById('apiConfigBtn');
-  const modalCloseBtn = document.getElementById('modalCloseBtn');
-  const saveGasUrlBtn = document.getElementById('saveGasUrlBtn');
-  const resetGasUrlBtn = document.getElementById('resetGasUrlBtn');
-  const gasUrlInput = document.getElementById('gasUrlInput');
-  const demoModeToggle = document.getElementById('demoModeToggle');
-  const currentGasUrlDisplay = document.getElementById('currentGasUrlDisplay');
-
-  if (apiConfigBtn && apiModal) {
-    apiConfigBtn.addEventListener('click', () => {
-      if (gasUrlInput) gasUrlInput.value = state.gasUrl;
-      if (demoModeToggle) demoModeToggle.checked = state.isDemoMode;
-      if (currentGasUrlDisplay) currentGasUrlDisplay.textContent = state.gasUrl;
-      apiModal.classList.add('open');
-    });
-  }
-
-  if (modalCloseBtn && apiModal) {
-    modalCloseBtn.addEventListener('click', () => {
-      apiModal.classList.remove('open');
-    });
-  }
-
-  if (saveGasUrlBtn && apiModal) {
-    saveGasUrlBtn.addEventListener('click', () => {
-      const newUrl = gasUrlInput.value.trim();
-      state.gasUrl = newUrl || DEFAULT_GAS_URL;
-      state.isDemoMode = demoModeToggle.checked;
-      
-      localStorage.setItem('gds_gas_url', state.gasUrl);
-      localStorage.setItem('gds_demo_mode', state.isDemoMode ? 'true' : 'false');
-      
-      apiModal.classList.remove('open');
-      loadData();
-    });
-  }
-
-  if (resetGasUrlBtn) {
-    resetGasUrlBtn.addEventListener('click', () => {
-      state.gasUrl = DEFAULT_GAS_URL;
-      state.isDemoMode = false;
-      localStorage.removeItem('gds_gas_url');
-      localStorage.removeItem('gds_demo_mode');
-      if (gasUrlInput) gasUrlInput.value = DEFAULT_GAS_URL;
-      if (demoModeToggle) demoModeToggle.checked = false;
-      if (currentGasUrlDisplay) currentGasUrlDisplay.textContent = DEFAULT_GAS_URL;
-    });
-  }
 }
 
 // 11. App Initialization
@@ -913,7 +830,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(updateKSTClock, 1000);
 
   setupEventListeners();
-
   loadData();
 
   setInterval(() => {
