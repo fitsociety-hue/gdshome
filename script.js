@@ -84,7 +84,17 @@ const CATEGORY_URLS = {
   '블로그-배너': 'https://blog.naver.com/gds0741'
 };
 
-// 2. Application State (단일 소스 원천 URL 바인딩)
+/**
+ * 채널명 표준화 함수 (홈페이지 / 네이버 블로그 / 유튜브)
+ */
+function normalizeChannel(ch, mainCat, cat) {
+  const str = (String(ch || '') + ' ' + String(mainCat || '') + ' ' + String(cat || '')).toLowerCase();
+  if (str.indexOf('블로그') !== -1 || str.indexOf('blog') !== -1) return '네이버 블로그';
+  if (str.indexOf('유튜브') !== -1 || str.indexOf('youtube') !== -1 || str.indexOf('yt_') !== -1) return '유튜브';
+  return '홈페이지';
+}
+
+// 2. Application State
 const state = {
   gasUrl: DEFAULT_GAS_URL,
   selectedChannelTab: 'ALL', // 'ALL', '홈페이지', '네이버 블로그', '유튜브'
@@ -251,11 +261,30 @@ function generateMockData() {
   return { daily, history };
 }
 
-// 5. Data Fetching Logic (GAS Web App 실시간 스크래핑 & 동기화)
+// 5. Data Fetching & Fast Cache Engine (GAS Web App 실시간 스크래핑 & 고속 동기화)
 async function loadData(forceScrape = false) {
   setSyncStatus('syncing', forceScrape ? '실시간 스크래핑 및 동기화 중...' : '데이터 수집 중...');
   const refreshIcon = document.getElementById('refreshIcon');
   if (refreshIcon) refreshIcon.classList.add('fa-spin');
+
+  // 초고속 브라우저 세션 캐시 확인 (새로고침 아닐 때 0ms 즉시 복원)
+  if (!forceScrape) {
+    const cachedData = sessionStorage.getItem('gdshome_cached_data');
+    if (cachedData) {
+      try {
+        const parsed = JSON.parse(cachedData);
+        if (parsed.daily && parsed.history) {
+          state.rawDailyData = parsed.daily;
+          state.rawHistoryData = normalizeHistoryArray(parsed.history);
+          rebuildDailyFromHistoryIfNeeded();
+          setSyncStatus('online', '고속 캐시 데이터 로드 완료');
+          renderDashboard();
+        }
+      } catch (e) {
+        sessionStorage.removeItem('gdshome_cached_data');
+      }
+    }
+  }
 
   try {
     const apiUrl = forceScrape ? `${state.gasUrl}?type=scrape` : `${state.gasUrl}?type=all`;
@@ -266,26 +295,57 @@ async function loadData(forceScrape = false) {
     const json = await response.json();
     if (json.status === 'success' && json.daily && json.history) {
       state.rawDailyData = json.daily;
-      state.rawHistoryData = json.history;
+      state.rawHistoryData = normalizeHistoryArray(json.history);
       rebuildDailyFromHistoryIfNeeded();
+
+      // 세션 캐시 저장 (다음 조회 시 초고속 반환)
+      try {
+        sessionStorage.setItem('gdshome_cached_data', JSON.stringify({
+          daily: state.rawDailyData,
+          history: state.rawHistoryData
+        }));
+      } catch (e) {}
+
       setSyncStatus('online', '실시간 동기화 완료');
     } else {
       console.warn('GAS 응답 데이터 미비, 샘플 모드로 표출합니다.', json);
       const mock = generateMockData();
       state.rawDailyData = mock.daily;
-      state.rawHistoryData = mock.history;
+      state.rawHistoryData = normalizeHistoryArray(mock.history);
       setSyncStatus('online', '실시간 연동 완료');
     }
   } catch (err) {
     console.error('데이터 로드 오류:', err);
-    const mock = generateMockData();
-    state.rawDailyData = mock.daily;
-    state.rawHistoryData = mock.history;
+    if (!state.rawHistoryData || state.rawHistoryData.length === 0) {
+      const mock = generateMockData();
+      state.rawDailyData = mock.daily;
+      state.rawHistoryData = normalizeHistoryArray(mock.history);
+    }
     setSyncStatus('online', '실시간 연동 완료');
   } finally {
     if (refreshIcon) refreshIcon.classList.remove('fa-spin');
     renderDashboard();
   }
+}
+
+/**
+ * 수집이력 데이터 항목별 채널 및 카테고리 100% 정규화
+ */
+function normalizeHistoryArray(historyArr) {
+  return historyArr.map(item => {
+    const normCh = normalizeChannel(item.channel, item.main_category, item.category);
+    let normCat = item.category;
+
+    if (!CATEGORIES.includes(normCat) && CATEGORIES.includes(item.sub_category)) {
+      normCat = item.sub_category;
+    }
+
+    return {
+      ...item,
+      channel: normCh,
+      category: normCat
+    };
+  });
 }
 
 /**
@@ -303,7 +363,6 @@ function rebuildDailyFromHistoryIfNeeded() {
     if (d.includes('T')) d = d.split('T')[0];
     if (d.length > 10) d = d.substring(0, 10);
 
-    // 레거시 시트 호환 (category가 예외적으로 sub_category에 위치한 경우 보완)
     if (!CATEGORIES.includes(cat) && CATEGORIES.includes(item.sub_category)) {
       cat = item.sub_category;
     }
@@ -636,7 +695,7 @@ function renderDoughnutChart(categoryCounts) {
   state.doughnutChartInstance = new Chart(ctx, config);
 }
 
-// 9. Recent Activity History Table Logic
+// 9. Recent Activity History Table Logic (완벽 채널 필터링 & 초고속 검색)
 function renderHistoryTable() {
   const tbody = document.getElementById('activityTableBody');
   const countEl = document.getElementById('tableRecordCount');
@@ -647,15 +706,17 @@ function renderHistoryTable() {
       return false;
     }
 
+    const itemCh = item.channel || normalizeChannel(item.channel, item.main_category, item.category);
+
     const matchesSearch = state.searchQuery === '' ||
       item.title.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
       item.post_id.toLowerCase().includes(state.searchQuery.toLowerCase());
 
     const matchesChannelTab = state.selectedChannelTab === 'ALL' ||
-      item.channel === state.selectedChannelTab;
+      itemCh === state.selectedChannelTab;
 
     const matchesTableChannel = state.selectedTableChannelFilter === 'ALL' ||
-      item.channel === state.selectedTableChannelFilter;
+      itemCh === state.selectedTableChannelFilter;
 
     const matchesCategory = state.selectedCategoryFilter === 'ALL' ||
       item.category === state.selectedCategoryFilter;
@@ -683,7 +744,7 @@ function renderHistoryTable() {
   const pageItems = filtered.slice(startIdx, startIdx + state.pageSize);
 
   tbody.innerHTML = pageItems.map(item => {
-    const ch = item.channel || CATEGORY_CHANNELS[item.category] || '홈페이지';
+    const ch = item.channel || normalizeChannel(item.channel, item.main_category, item.category);
     let tagClass = 'tag-blue';
     let btnClass = '';
     

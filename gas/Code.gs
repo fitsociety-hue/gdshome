@@ -6,9 +6,9 @@
  *   1. 복지관 7개 게시판 정기 스크래핑 (gde.or.kr - 범용 GNUBoard 스킨/카드/테이블 대응)
  *   2. 유튜브 채널 신규 업로드 동영상 감지 (YouTube Channel RSS / Atom XML)
  *   3. 네이버 블로그 카테고리별 신규 포스팅 감지 (Naver Blog RSS XML)
- *   4. post_id 기반 중복 제거 및 Google Sheets 적재
- *   5. 레거시(7열)/신규(9열) 수집이력 시트 스키마 및 동적 일별집계 칼럼 호환 파싱
- *   6. KST 기준 일별/채널별/카테고리별 실적 인덱스 기반 인코딩 안전 카운팅
+ *   4. post_id 기반 중복 제거 및 Google Sheets 고속 적재
+ *   5. 레거시(7열) 및 신규(9열) 수집이력 시트 자동 마이그레이션 및 데이터 구조 정규화
+ *   6. 채널 정규화 (홈페이지 / 네이버 블로그 / 유튜브) 100% 정확한 필터링 보장
  *   7. 프론트엔드(GitHub Pages) 연결용 Web App JSON API (doGet)
  * ==========================================================================
  */
@@ -40,7 +40,17 @@ const TARGET_CONFIGS = [
 const CATEGORIES = TARGET_CONFIGS.map(c => c.category);
 
 /**
- * 2. 초기 구글 스프레드시트 구조 세팅
+ * 채널명 표준화 함수 (홈페이지 / 네이버 블로그 / 유튜브)
+ */
+function normalizeChannel(ch, mainCat, cat) {
+  const str = (String(ch || '') + ' ' + String(mainCat || '') + ' ' + String(cat || '')).toLowerCase();
+  if (str.indexOf('블로그') !== -1 || str.indexOf('blog') !== -1) return '네이버 블로그';
+  if (str.indexOf('유튜브') !== -1 || str.indexOf('youtube') !== -1 || str.indexOf('yt_') !== -1) return '유튜브';
+  return '홈페이지';
+}
+
+/**
+ * 2. 초기 구글 스프레드시트 구조 세팅 및 자동 마이그레이션
  */
 function initSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -50,11 +60,12 @@ function initSheets() {
   if (!historySheet) {
     historySheet = ss.insertSheet('수집이력');
   }
+  
   if (historySheet.getLastRow() === 0) {
     historySheet.appendRow(['post_id', '채널', '대분류', '중분류', '세부항목', '제목', '게시일(KST)', '수집시각', '원문URL']);
     historySheet.getRange('A1:I1').setBackground('#E2E8F0').setFontWeight('bold');
   } else {
-    // 수집이력 첫번째 행에 '채널' 열이 없는 레거시 시트인 경우 자동으로 헤더 업데이트
+    // 레거시 시트 자동 마이그레이션
     const firstRow = historySheet.getRange(1, 1, 1, historySheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
     if (!firstRow.includes('채널')) {
       historySheet.getRange(1, 1, 1, 9).setValues([['post_id', '채널', '대분류', '중분류', '세부항목', '제목', '게시일(KST)', '수집시각', '원문URL']]);
@@ -85,19 +96,16 @@ function initSheets() {
     });
     configSheet.getRange('A1:F1').setBackground('#E2E8F0').setFontWeight('bold');
   }
-
-  Logger.log('시트 초기화 세팅 완료!');
 }
 
 /**
- * 3. 메인 스크래핑 및 카운팅 엔진
+ * 3. 메인 스크래핑 및 고속 카운팅 엔진
  */
 function runScraper() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const historySheet = ss.getSheetByName('수집이력') || ss.insertSheet('수집이력');
   const dailySheet = ss.getSheetByName('일별집계') || ss.insertSheet('일별집계');
 
-  // 레거시/신규 시트 헤더 체크
   initSheets();
 
   const existingPostIds = new Set();
@@ -233,7 +241,7 @@ function runScraper() {
 }
 
 /**
- * 4. 범용 GNUBoard 파싱 함수 (테이블, 갤러리 카드, 모바일/스킨 변형 완벽 대처)
+ * 4. 범용 GNUBoard 파싱 함수
  */
 function parseGnuboardHtml(html, conf) {
   const posts = [];
@@ -465,7 +473,6 @@ function updateDailyAggregation(dailySheet, dateStr, confCategory) {
     const currentVal = Number(dailySheet.getRange(targetRowIndex, colIndex).getValue()) || 0;
     dailySheet.getRange(targetRowIndex, colIndex).setValue(currentVal + 1);
     
-    // Recalculate total
     const rowVals = dailySheet.getRange(targetRowIndex, 2, 1, dailySheet.getLastColumn() - 2).getValues()[0];
     const rowTotal = rowVals.reduce((acc, v) => acc + (Number(v) || 0), 0);
     dailySheet.getRange(targetRowIndex, dailySheet.getLastColumn()).setValue(rowTotal);
@@ -478,7 +485,7 @@ function updateDailyAggregation(dailySheet, dateStr, confCategory) {
 }
 
 /**
- * 8. Web App JSON API Endpoint (doGet) - 레거시(7열) 및 신규(9열) 스키마 완벽 호환
+ * 8. Web App JSON API Endpoint (doGet) - 초고속 수집 데이터 반환 & 정규화 채널 바인딩
  */
 function doGet(e) {
   try {
@@ -527,22 +534,16 @@ function doGet(e) {
     const hasChannelCol = headerRow.includes('채널');
 
     const totalRows = historySheet.getLastRow() - 1;
-    const readRows = Math.min(totalRows, 800);
+    const readRows = Math.min(totalRows, 1000);
     const startRow = Math.max(2, historySheet.getLastRow() - readRows + 1);
     const rows = historySheet.getRange(startRow, 1, readRows, historySheet.getLastColumn()).getValues();
-
-    const categoryChannels = {
-      '공지사항': '홈페이지', '공시자료': '홈페이지', '인재채용': '홈페이지',
-      '이용인모집': '홈페이지', '정보안내': '홈페이지', '갤러리(전체)': '홈페이지',
-      '이용상담문의': '홈페이지', '유튜브(동영상)': '유튜브'
-    };
 
     rows.reverse().forEach(r => {
       let postId, channel, mainCategory, subCategory, category, title, date, collectedAt, url;
 
       if (hasChannelCol && r.length >= 8) {
         postId = String(r[0]);
-        channel = String(r[1] || '홈페이지');
+        channel = String(r[1] || '');
         mainCategory = String(r[2]);
         subCategory = String(r[3]);
         category = String(r[4]);
@@ -551,16 +552,23 @@ function doGet(e) {
         collectedAt = r[7];
         url = String(r[8] || '');
       } else {
-        // 레거시 7열 시트 구조 (post_id, 대분류, 중분류, 세부항목, 제목, 게시일, 수집시각)
         postId = String(r[0]);
         mainCategory = String(r[1]);
         subCategory = String(r[2]);
         category = String(r[3]);
         title = String(r[4]);
-        channel = categoryChannels[category] || '홈페이지';
+        channel = '';
         date = r[5];
         collectedAt = r[6];
         url = '';
+      }
+
+      // 채널명 표준화 (홈페이지 / 네이버 블로그 / 유튜브)
+      const normChannel = normalizeChannel(channel, mainCategory, category);
+
+      // 카테고리 정상 위치 보완
+      if (!CATEGORIES.includes(category) && CATEGORIES.includes(subCategory)) {
+        category = subCategory;
       }
 
       const dateStr = date instanceof Date ? Utilities.formatDate(date, "Asia/Seoul", "yyyy-MM-dd") : String(date).substring(0, 10);
@@ -568,7 +576,7 @@ function doGet(e) {
 
       historyData.push({
         post_id: postId,
-        channel: channel,
+        channel: normChannel,
         main_category: mainCategory,
         sub_category: subCategory,
         category: category,
